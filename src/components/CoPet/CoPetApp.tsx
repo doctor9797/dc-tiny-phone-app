@@ -856,7 +856,7 @@ export default function CoPetApp() {
                     onClick={() => { setTempCompanionId(char.id); setSetupStep(2); }}
                     className="p-4 bg-white rounded-2xl flex items-center gap-4 border-2 border-transparent active:border-orange-200 transition-colors cursor-pointer shadow-sm"
                   >
-                    <div className="w-12 h-12 rounded-full overflow-hidden shrink-0" style={{ background: char.background }}>
+                    <div className="w-12 h-12 rounded-full overflow-hidden shrink-0" style={{ background: char.avatar.startsWith('#') ? char.avatar : char.background }}>
                        {!char.avatar.startsWith('#') && <img src={char.avatar} className="w-full h-full object-cover" alt="" />}
                     </div>
                     <div className="font-bold text-slate-800 flex-1">{char.name}</div>
@@ -995,7 +995,7 @@ const handlePetClick = async () => {
       <div className="pt-14 px-6 pb-2 flex items-center justify-between shrink-0 z-10">
           <button onClick={closeApp} className="w-10 h-10 flex text-slate-800 -ml-2 items-center"><ChevronLeft size={28} /></button>
           <div className="flex items-center gap-2">
-             <div className="w-8 h-8 rounded-full overflow-hidden bg-white border-2 border-orange-200">
+             <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-orange-200" style={{ background: char.avatar.startsWith('#') ? char.avatar : '#fff' }}>
                {!char.avatar.startsWith('#') && <img src={char.avatar} className="w-full h-full object-cover" alt="" />}
              </div>
              <span className="font-bold text-slate-800 text-sm">与 {char.name} 共养</span>
@@ -1183,8 +1183,8 @@ const handlePetClick = async () => {
               )}
               {copetData.history.map((item, idx) => (
                  <div key={idx} className="flex gap-3 items-start animate-fade-in">
-                   <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-100 shrink-0 border border-slate-200">
-                     {char && !char.avatar.startsWith('#') ? <img src={char.avatar} className="w-full h-full object-cover" alt="" /> : <User size={16} className="m-2 text-slate-400" />}
+                   <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200" style={{ background: char && char.avatar.startsWith('#') ? char.avatar : '#f1f5f9' }}>
+                     {char && !char.avatar.startsWith('#') ? <img src={char.avatar} className="w-full h-full object-cover" alt="" /> : (char && char.avatar.startsWith('#') ? null : <User size={16} className="m-2 text-slate-400" />)}
                    </div>
                    <div className="flex-1 pt-1">
                       <div className="text-sm font-medium text-slate-700 leading-relaxed bg-slate-50/50 p-2.5 rounded-xl rounded-tl-none inline-block">
@@ -1298,7 +1298,7 @@ const handlePetClick = async () => {
                          </div>
                        ) : adventureState.result ? (
                          <div className="animate-bounce-in w-full flex flex-col items-center mt-4">
-                           <div className="text-center w-16 h-16 rounded-full overflow-hidden border-4 border-slate-100 mb-4 shadow-sm">
+                           <div className="text-center w-16 h-16 rounded-full overflow-hidden border-4 border-slate-100 mb-4 shadow-sm" style={{ background: char.avatar.startsWith('#') ? char.avatar : undefined }}>
                              {!char.avatar.startsWith('#') && <img src={char.avatar} className="w-full h-full object-cover" alt="" />}
                            </div>
                            <div className="bg-emerald-50/50 p-5 rounded-3xl border border-emerald-100 mb-6 text-center">

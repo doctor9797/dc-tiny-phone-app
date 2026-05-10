@@ -194,13 +194,14 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [recordingStartTime, setRecordingStartTime] = useState(0);
   const [showTopMenu, setShowTopMenu] = useState(false);
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const followUpTimerRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
+  const pendingStopRef = useRef(false);
   const isDark = settings.wechatTheme === 'dark';
   const t = getT(settings.osTheme || 'green');
 
@@ -314,23 +315,34 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '';
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = recorder;
-      
+
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
-      
+
       recorder.start();
-      setIsRecording(true);
       setRecordingStartTime(Date.now());
+      setIsRecording(true);
+
+      // If user released before recorder was ready, stop immediately
+      if (pendingStopRef.current) {
+        pendingStopRef.current = false;
+        setTimeout(() => handleStopRecording(), 50);
+      }
     } catch (err) {
       console.error('Failed to start recording:', err);
+      setIsRecording(false);
+      setAudioBlob(null);
+      setVoiceStatusText('麦克风不可用');
+      setTimeout(() => setVoiceStatusText(''), 2000);
     }
   };
 
   const handleStopRecording = () => {
     if (mediaRecorderRef.current?.state === 'recording') {
+      const recordedType = mediaRecorderRef.current.mimeType || 'audio/webm';
       mediaRecorderRef.current.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(chunksRef.current, { type: recordedType });
         setAudioBlob(blob);
 
         const duration = (Date.now() - recordingStartTime) / 1000;
@@ -386,6 +398,9 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
         setIsRecording(false);
       };
       mediaRecorderRef.current.stop();
+    } else {
+      // Recorder not ready yet — will stop once it starts
+      pendingStopRef.current = true;
     }
   };
 
