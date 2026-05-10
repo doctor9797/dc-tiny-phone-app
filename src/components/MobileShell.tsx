@@ -27,6 +27,7 @@ import MailboxApp from './Mailbox/MailboxApp';
 import ForumApp from './Forum/ForumApp';
 import IFApp from './IF/IFApp';
 import MovieApp from './Movie/MovieApp';
+import FloatingMusicPlayer from './Music/FloatingMusicPlayer';
 import { AnimatePresence, motion } from 'framer-motion';
 import { format, differenceInMinutes, parse, startOfDay, addDays } from 'date-fns';
 import { getCharacterReply } from '../lib/ai';
@@ -399,6 +400,9 @@ export default function MobileShell() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Floating Music Player */}
+        <FloatingMusicPlayer />
 
         {/* Notification Banner */}
         {notification && !isLocked && (

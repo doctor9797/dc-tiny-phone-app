@@ -288,6 +288,12 @@ interface AppActions {
   setWatchCompanionPlans: (plans: import('./types').WatchCompanionPlan[]) => void;
   updateMovieSession: (id: string, updates: Partial<import('./types').MovieSession>) => void;
   deleteMovieSession: (id: string) => void;
+  setMusicPlayback: (playback: Partial<AppState['musicPlayback']>) => void;
+  playSongById: (songId: string) => void;
+  togglePlayPause: () => void;
+  nextSong: () => void;
+  prevSong: () => void;
+  setMusicPlayerMode: (mode: AppState['musicPlayback']['mode']) => void;
 }
 
 const getCharacterExperience = (id: string) => {
@@ -382,6 +388,13 @@ export const useAppStore = create<AppState & AppActions>()(
       tarotRecords: [],
       movieSessions: [],
       watchCompanionPlans: [],
+      musicPlayback: {
+        currentSongId: null,
+        isPlaying: false,
+        currentTime: 0,
+        duration: 0,
+        mode: 'hidden',
+      },
       notification: null,
       notificationQueue: [],
       clearNotification: () => set((state) => {
@@ -981,6 +994,65 @@ export const useAppStore = create<AppState & AppActions>()(
       })),
 
       updateCoPet: (data) => set({ copetData: data }),
+
+      setMusicPlayback: (playback) => set((state) => ({
+        musicPlayback: { ...state.musicPlayback, ...playback }
+      })),
+
+      playSongById: (songId) => set((state) => ({
+        musicPlayback: {
+          ...state.musicPlayback,
+          currentSongId: songId,
+          isPlaying: true,
+          currentTime: 0,
+          mode: 'full',
+        }
+      })),
+
+      togglePlayPause: () => set((state) => ({
+        musicPlayback: {
+          ...state.musicPlayback,
+          isPlaying: !state.musicPlayback.isPlaying,
+        }
+      })),
+
+      nextSong: () => set((state) => {
+        const songs = state.songs;
+        const currentId = state.musicPlayback.currentSongId;
+        if (!songs.length || !currentId) return {};
+        const idx = songs.findIndex(s => s.id === currentId);
+        if (idx === -1) return {};
+        const next = (idx + 1) % songs.length;
+        return {
+          musicPlayback: {
+            ...state.musicPlayback,
+            currentSongId: songs[next].id,
+            isPlaying: true,
+            currentTime: 0,
+          }
+        };
+      }),
+
+      prevSong: () => set((state) => {
+        const songs = state.songs;
+        const currentId = state.musicPlayback.currentSongId;
+        if (!songs.length || !currentId) return {};
+        const idx = songs.findIndex(s => s.id === currentId);
+        if (idx === -1) return {};
+        const prev = (idx - 1 + songs.length) % songs.length;
+        return {
+          musicPlayback: {
+            ...state.musicPlayback,
+            currentSongId: songs[prev].id,
+            isPlaying: true,
+            currentTime: 0,
+          }
+        };
+      }),
+
+      setMusicPlayerMode: (mode) => set((state) => ({
+        musicPlayback: { ...state.musicPlayback, mode }
+      })),
     }),
     {
       name: 'dc-phone-storage',

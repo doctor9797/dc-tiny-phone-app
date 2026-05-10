@@ -1,22 +1,25 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useAppStore } from '../../store';
-import { ChevronLeft, Scroll, ScrollText, Users, BookOpen, Send, Lightbulb, Search, Flag, Plus, Trash2 } from 'lucide-react';
+import { ChevronLeft, Scroll, ScrollText, Users, BookOpen, Send, Lightbulb, Search, Flag, Plus, Trash2, Image as ImageIcon } from 'lucide-react';
 import { generateAIResponse, sendCharacterActivityFollowup } from '../../lib/ai';
 import { JubenshaCaseData } from '../../types';
 
-const getT = (theme: string) => {
-  const t: Record<string, any> = {
-    cyan: { bg: 'bg-cyan-50 dark:bg-cyan-950', text: 'text-cyan-900 dark:text-cyan-50', header: 'bg-cyan-100/70 dark:bg-cyan-900/70', border: 'border-cyan-200 dark:border-cyan-800', prim: 'text-cyan-600 dark:text-cyan-400', primary: 'bg-cyan-500 hover:bg-cyan-600', accent: 'text-cyan-600 dark:text-cyan-400' },
-    pink: { bg: 'bg-pink-50 dark:bg-pink-950', text: 'text-pink-900 dark:text-pink-50', header: 'bg-pink-100/70 dark:bg-pink-900/70', border: 'border-pink-200 dark:border-pink-800', prim: 'text-pink-600 dark:text-pink-400', primary: 'bg-pink-500 hover:bg-pink-600', accent: 'text-pink-600 dark:text-pink-400' },
-    white: { bg: 'bg-slate-50 dark:bg-[#0f0f0f]', text: 'text-slate-900 dark:text-slate-50', header: 'bg-white/70 dark:bg-[#1a1a1a]/70', border: 'border-slate-200 dark:border-white/10', prim: 'text-slate-500 dark:text-slate-400', primary: 'bg-slate-600 hover:bg-slate-700', accent: 'text-slate-600 dark:text-slate-400' },
-    green: { bg: 'bg-emerald-50 dark:bg-emerald-950', text: 'text-emerald-900 dark:text-emerald-50', header: 'bg-emerald-100/70 dark:bg-emerald-900/70', border: 'border-emerald-200 dark:border-emerald-800', prim: 'text-emerald-600 dark:text-emerald-400', primary: 'bg-emerald-500 hover:bg-emerald-600', accent: 'text-emerald-600 dark:text-emerald-400' },
-    purple: { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-purple-900 dark:text-purple-50', header: 'bg-purple-100/70 dark:bg-purple-900/70', border: 'border-purple-200 dark:border-purple-800', prim: 'text-purple-600 dark:text-purple-400', primary: 'bg-purple-500 hover:bg-purple-600', accent: 'text-purple-600 dark:text-purple-400' },
-    black: { bg: 'bg-zinc-900 dark:bg-black', text: 'text-zinc-100 dark:text-zinc-100', header: 'bg-zinc-800/70 dark:bg-black/70', border: 'border-zinc-700 dark:border-white/5', prim: 'text-zinc-400 dark:text-zinc-400', primary: 'bg-zinc-600 hover:bg-zinc-500', accent: 'text-zinc-500 dark:text-zinc-400' },
-    gray: { bg: 'bg-gray-50 dark:bg-gray-950', text: 'text-gray-900 dark:text-gray-50', header: 'bg-gray-100/70 dark:bg-gray-900/70', border: 'border-gray-200 dark:border-gray-800', prim: 'text-gray-500 dark:text-gray-400', primary: 'bg-gray-500 hover:bg-gray-600', accent: 'text-gray-500 dark:text-gray-400' },
-    yellow: { bg: 'bg-amber-50 dark:bg-amber-950', text: 'text-amber-900 dark:text-amber-50', header: 'bg-amber-100/70 dark:bg-amber-900/70', border: 'border-amber-200 dark:border-amber-800', prim: 'text-amber-600 dark:text-amber-400', primary: 'bg-amber-500 hover:bg-amber-600', accent: 'text-amber-600 dark:text-amber-400' },
-  }
-  return t[theme] || t.green;
-};
+const INS_BG = 'bg-[#f8f8fa] dark:bg-[#0f0f12]';
+const INS_CARD = 'bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10';
+const INS_INPUT = 'bg-white/60 dark:bg-white/[0.05] border border-slate-200/50 dark:border-white/10';
+const INS_TEXT = 'text-slate-800 dark:text-slate-100';
+const INS_MUTED = 'text-slate-400 dark:text-slate-500';
+const INS_BTN = 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 hover:opacity-90';
+
+const BG_STORAGE_KEY = 'jubensha_bg';
+const BG_PRESETS = [
+  'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&q=80',
+  'https://images.unsplash.com/photo-1470071459604-7b8ec44ffd4b?w=400&q=80',
+  'https://images.unsplash.com/photo-1497436072909-60f360e1d4b1?w=400&q=80',
+  'https://images.unsplash.com/photo-1504198453319-5ce911bafcde?w=400&q=80',
+  'https://images.unsplash.com/photo-1518173946687-a36f968f7aba?w=400&q=80',
+  'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=400&q=80',
+];
 
 const BACKGROUNDS = ['古代西方', '古代东方', '近现代', '西方中世纪', '古希腊', '赛博朋克', '废土末日', '现代都市', '魔法学院', '星际飞船', '诡异山村', '民国时期', '深海基地'];
 const THEMES = ['悬疑', '悲剧', '喜剧', '爱情', '硬核推理', '本格密室', '欢乐机制', '阵营背叛', '情感沉浸', '克苏鲁神话', '怪谈传说'];
@@ -25,20 +28,43 @@ type GameStep = 'list' | 'setup' | 'generating' | 'reading' | 'playing' | 'endin
 
 export default function JubenshaApp() {
   const { closeApp, characters, jubenshaSessions, createJubenshaSession, updateJubenshaSession, deleteJubenshaSession, addActivityLog, settings } = useAppStore();
-  const t = getT(settings.osTheme || 'green');
-  const isDark = settings.isDark;
-  
+
   const [step, setStep] = useState<GameStep>('list');
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
-  
+
   const [bgMode, setBgMode] = useState<'preset' | 'custom'>('preset');
   const [selectedBg, setSelectedBg] = useState(BACKGROUNDS[0]);
   const [customBg, setCustomBg] = useState('');
-  
+
   const [themeMode, setThemeMode] = useState<'preset' | 'custom'>('preset');
   const [selectedTheme, setSelectedTheme] = useState(THEMES[0]);
   const [customTheme, setCustomTheme] = useState('');
+
+  const [bgUrl, setBgUrl] = useState(() => {
+    try { return localStorage.getItem(BG_STORAGE_KEY) || ''; }
+    catch { return ''; }
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showBgPicker, setShowBgPicker] = useState(false);
+
+  const handleBgImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      setBgUrl(dataUrl);
+      try { localStorage.setItem(BG_STORAGE_KEY, dataUrl); } catch {}
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const setBg = (url: string) => {
+    setBgUrl(url);
+    try { localStorage.setItem(BG_STORAGE_KEY, url); } catch {}
+    setShowBgPicker(false);
+  };
 
   const [script, setScript] = useState('');
   const [messages, setMessages] = useState<{role: 'system'|'user'|'character', name?: string, text: string}[]>([]);
@@ -74,7 +100,7 @@ export default function JubenshaApp() {
 
   const startGame = async () => {
     if (selectedCharIds.length < 2) return;
-    
+
     setStep('generating');
     const finalBg = bgMode === 'preset' ? selectedBg : customBg;
     const finalTheme = themeMode === 'preset' ? selectedTheme : customTheme;
@@ -161,7 +187,7 @@ ${caseJson.incident}`;
       };
       createJubenshaSession(newSession);
       setCurrentSessionId(sessionId);
-      
+
       setScript(generatedScript);
       setCaseData(caseJson);
       setDiscoveredClues([]);
@@ -179,13 +205,13 @@ ${caseJson.incident}`;
 
   const handleSend = async (text: string, isHintRequest = false) => {
     if (!text.trim() && !isHintRequest) return;
-    
+
     const userText = isHintRequest ? "【请求提示】我不知道该怎么办了，谁能给我一点隐晦的提示？" : text;
-    
+
     if (!isHintRequest) {
       setInput('');
     }
-    
+
     setMessages(prev => {
       const nextMsgs = [...prev, { role: 'user' as const, text: userText }];
       if (currentSessionId) {
@@ -200,7 +226,7 @@ ${caseJson.incident}`;
     const charNames = selectedCharIds.map(id => characters[id].name).join('、');
     const knownClues = (caseData?.clues || []).filter(clue => discoveredClues.includes(clue.id)).map(clue => `${clue.title}：${clue.detail}`).join('\n');
     const roleBrief = (caseData?.roles || []).map(role => `${role.playerId}: ${role.roleName}，公开身份=${role.publicIdentity}，性格=${role.personality}，经历=${role.backstory}，秘密=${role.secret}，目标=${role.objective}`).join('\n');
-    
+
     const history = messages.slice(-10).map(m => {
       if (m.role === 'system') return `[系统]: ${m.text}`;
       if (m.role === 'user') return `[我]: ${m.text}`;
@@ -220,14 +246,14 @@ ${caseJson.incident}`;
     ${history}
     [我]: ${userText}
 
-    ${isHintRequest 
-      ? '玩家请求了提示。请你扮演其中一个或几个角色，给出非常隐晦、不直白的提示。绝对不能直接说出真相或凶手，而是通过角色语气说出一些细思极恐的细节或引导性的疑问。' 
+    ${isHintRequest
+      ? '玩家请求了提示。请你扮演其中一个或几个角色，给出非常隐晦、不直白的提示。绝对不能直接说出真相或凶手，而是通过角色语气说出一些细思极恐的细节或引导性的疑问。'
       : `请你根据我的行动/语言，扮演其他角色（一个或多个）进行回应，或者作为DM描述环境变化。在不同阶段的要求：
-intro=偏自我介绍和气氛建立；
-investigation1/investigation2=偏搜证、试探、藏信息；
-discussion=偏互相怀疑和推理；
-final_vote=偏最后陈述。并在合适时给出一条新的可探索线索。`}
-    
+	intro=偏自我介绍和气氛建立；
+	investigation1/investigation2=偏搜证、试探、藏信息；
+	discussion=偏互相怀疑和推理；
+	final_vote=偏最后陈述。并在合适时给出一条新的可探索线索。`}
+
     请按照以下格式输出回应（可以有多行，每行代表一个角色的说话或系统描述）：
     角色名: 说话内容
     或者
@@ -237,10 +263,10 @@ final_vote=偏最后陈述。并在合适时给出一条新的可探索线索。
 
     try {
       const reply = await generateAIResponse(prompt);
-      
+
       const lines = reply.split('\n').filter(l => l.trim());
       const newMsgs: any[] = [];
-      
+
       lines.forEach(line => {
         const match = line.match(/^(.*?):\s*(.*)$/);
         if (match) {
@@ -342,68 +368,107 @@ ${clueContext}
     if (currentSessionId) updateJubenshaSession(currentSessionId, { phase: nextPhase, updatedAt: Date.now() });
   };
 
+  const bgStyle = bgUrl ? {
+    backgroundImage: `url(${bgUrl})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+    backgroundAttachment: 'fixed',
+  } : {};
+
+  // ─── LIST SCREEN ───
   if (step === 'list') {
     const sessionsList = Object.values(jubenshaSessions).sort((a, b) => b.updatedAt - a.updatedAt);
     return (
-      <div className={`h-full flex flex-col ${t.bg} absolute inset-0 z-50`}>
-        <div className={`${t.header} backdrop-blur-lg px-4 pt-12 pb-4 flex items-center justify-between border-b ${t.border}`}>
-          <button onClick={closeApp} className={t.prim}><ChevronLeft size={28} /></button>
-          <h1 className={`text-lg font-bold ${t.text}`}>剧本杀</h1>
-          <div className="w-8"></div>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <button 
-            onClick={() => setStep('setup')}
-            className={`w-full ${t.panel} border ${t.border} rounded-2xl p-4 flex items-center justify-center gap-3 ${t.primary} text-white font-semibold shadow-lg`}
-          >
-            <Plus size={20} />
-            开启新剧本
-          </button>
+      <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
+        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="relative z-10 flex flex-col h-full">
+          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
+            <button onClick={closeApp} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">剧本杀</h1>
+            <div className="flex gap-2">
+              <button onClick={() => setShowBgPicker(true)} className="p-1.5 rounded-xl bg-white/70 dark:bg-white/10 text-slate-500 dark:text-slate-400">
+                <ImageIcon size={18} />
+              </button>
+              <div className="w-8" />
+            </div>
+          </div>
 
-          {sessionsList.length === 0 ? (
-             <div className="text-center py-16">
-               <ScrollText size={64} className={`mx-auto mb-4 ${t.prim} opacity-30`} />
-               <p className="font-medium">暂无游玩记录</p>
-               <p className={`text-sm mt-1`}>点击上方按钮开始新剧本</p>
-             </div>
-          ) : (
-            sessionsList.map(session => (
-              <div key={session.id} className={`${t.panel} border ${t.border} rounded-2xl p-4 relative`}>
-                 <button 
-                   onClick={() => deleteJubenshaSession(session.id)}
-                   className="absolute top-4 right-4 p-2 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500"
-                 >
-                   <Trash2 size={16} />
-                 </button>
-                 <div 
-                   className="cursor-pointer"
-                   onClick={() => {
-                      setCurrentSessionId(session.id);
-                      setScript(session.script);
-                      setMessages(session.messages || []);
-                      setBgMode('custom'); setCustomBg(session.background);
-                      setThemeMode('custom'); setCustomTheme(session.theme);
-                      setSelectedCharIds(session.characterIds || []);
-                      setCaseData(session.caseData || null);
-                      setDiscoveredClues(session.discoveredClues || []);
-                      setAccusedCharacterId(session.accusedCharacterId || null);
-                      setEndingText(session.conclusion || '');
-                      setSelectedLocation(session.caseData?.clues?.[0]?.location || '公共区域');
-                      setPhase(session.phase || 'intro');
-                      setStep(session.isFinished ? 'ending' : 'playing');
-                   }}
-                 >
-                   <h3 className={`font-bold text-lg ${t.text} mb-1`}>{session.name}</h3>
-                   <div className={`text-xs ${t.prim} mb-3`}>{new Date(session.updatedAt).toLocaleString()}</div>
-                   <div className={`flex items-center gap-2 text-xs ${t.prim}`}>
-                      <Users size={12} /> {session.characterIds?.map(id => characters[id]?.name || '未知').join('、')}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <button
+              onClick={() => setStep('setup')}
+              className="w-full bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4 flex items-center justify-center gap-3 bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 font-semibold shadow-lg"
+            >
+              <Plus size={20} />
+              开启新剧本
+            </button>
+
+            {sessionsList.length === 0 ? (
+               <div className="text-center py-16">
+                 <ScrollText size={64} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
+                 <p className="font-medium text-slate-800 dark:text-slate-200">暂无游玩记录</p>
+                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">点击上方按钮开始新剧本</p>
+               </div>
+            ) : (
+              sessionsList.map(session => (
+                <div key={session.id} className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4 relative">
+                   <button
+                     onClick={() => deleteJubenshaSession(session.id)}
+                     className="absolute top-4 right-4 p-2 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500"
+                   >
+                     <Trash2 size={16} />
+                   </button>
+                   <div
+                     className="cursor-pointer"
+                     onClick={() => {
+                        setCurrentSessionId(session.id);
+                        setScript(session.script);
+                        setMessages(session.messages || []);
+                        setBgMode('custom'); setCustomBg(session.background);
+                        setThemeMode('custom'); setCustomTheme(session.theme);
+                        setSelectedCharIds(session.characterIds || []);
+                        setCaseData(session.caseData || null);
+                        setDiscoveredClues(session.discoveredClues || []);
+                        setAccusedCharacterId(session.accusedCharacterId || null);
+                        setEndingText(session.conclusion || '');
+                        setSelectedLocation(session.caseData?.clues?.[0]?.location || '公共区域');
+                        setPhase(session.phase || 'intro');
+                        setStep(session.isFinished ? 'ending' : 'playing');
+                     }}
+                   >
+                     <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{session.name}</h3>
+                     <div className="text-xs text-slate-400 dark:text-slate-500 mb-3">{new Date(session.updatedAt).toLocaleString()}</div>
+                     <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+                        <Users size={12} /> {session.characterIds?.map(id => characters[id]?.name || '未知').join('、')}
+                     </div>
                    </div>
-                 </div>
-              </div>
-            ))
-          )}
+                </div>
+              ))
+            )}
+          </div>
         </div>
+        {showBgPicker && (
+          <div className="absolute inset-0 z-[60] bg-black/40 flex items-center justify-center p-6" onClick={() => setShowBgPicker(false)}>
+            <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+              <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-4">选择背景图</div>
+              <div className="grid grid-cols-3 gap-2 mb-4">
+                {BG_PRESETS.map((url, i) => (
+                  <button key={i} onClick={() => setBg(url)} className="w-full aspect-[3/2] rounded-xl overflow-hidden border border-slate-200/50 dark:border-white/10 hover:opacity-80 transition-opacity">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => fileInputRef.current?.click()} className="w-full py-3 rounded-xl border border-slate-200/50 dark:border-white/10 text-slate-600 dark:text-slate-400 text-sm font-medium">
+                从相册导入
+              </button>
+              {bgUrl && (
+                <button onClick={() => setBg('')} className="w-full py-3 rounded-xl text-red-500 text-sm font-medium mt-2">
+                  清除背景图
+                </button>
+              )}
+              <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgImport} />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -454,300 +519,320 @@ ${clueContext}
     }
   };
 
+  // ─── SETUP SCREEN ───
   if (step === 'setup') {
     return (
-      <div className={`h-full flex flex-col ${t.bg} absolute inset-0 z-50`}>
-        <div className={`${t.header} backdrop-blur-lg px-4 pt-12 pb-4 flex items-center justify-between border-b ${t.border}`}>
-          <button onClick={() => setStep('list')} className={t.prim}><ChevronLeft size={28} /></button>
-          <h1 className={`text-lg font-bold ${t.text}`}>创建剧本</h1>
-          <div className="w-8"></div>
-        </div>
+      <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
+        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="relative z-10 flex flex-col h-full">
+          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
+            <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">创建剧本</h1>
+            <div className="w-8"></div>
+          </div>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
-          <section>
-            <h2 className={`text-sm font-bold ${t.prim} mb-3`}>邀请角色 (至少2位)</h2>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {Object.values(characters).filter(c=>(c as any).isDisabled !== true).map(char => (
-                <div 
-                  key={char.id}
-                  onClick={() => toggleCharSelection(char.id)}
-                  className={`shrink-0 w-20 flex flex-col items-center gap-2 cursor-pointer transition-all ${selectedCharIds.includes(char.id) ? 'opacity-100' : 'opacity-40 grayscale'}`}
-                >
-                  <div className={`w-14 h-14 rounded-full overflow-hidden border-2 ${selectedCharIds.includes(char.id) ? `border-current ${t.accent} shadow-lg` : 'border-transparent'}`} style={{ background: char.background }}>
-                    {char.avatar && !char.avatar.startsWith('#') && <img src={char.avatar} alt="" className="w-full h-full object-cover" />}
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <section>
+              <h2 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">邀请角色 (至少2位)</h2>
+              <div className="flex gap-3 overflow-x-auto pb-2">
+                {Object.values(characters).filter(c=>(c as any).isDisabled !== true).map(char => (
+                  <div
+                    key={char.id}
+                    onClick={() => toggleCharSelection(char.id)}
+                    className={`shrink-0 w-20 flex flex-col items-center gap-2 cursor-pointer transition-all ${selectedCharIds.includes(char.id) ? 'opacity-100' : 'opacity-40 grayscale'}`}
+                  >
+                    <div className={`w-14 h-14 rounded-full overflow-hidden border-2 ${selectedCharIds.includes(char.id) ? 'border-slate-500 dark:border-slate-300 shadow-lg' : 'border-transparent'}`} style={{ background: char.background }}>
+                      {char.avatar && !char.avatar.startsWith('#') && <img src={char.avatar} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    <span className="text-[10px] text-center line-clamp-1 text-slate-700 dark:text-slate-300">{char.name}</span>
                   </div>
-                  <span className="text-[10px] text-center line-clamp-1">{char.name}</span>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <h2 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">选择背景</h2>
+              <div className="flex gap-2 mb-3">
+                <button onClick={() => setBgMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'preset' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>预设</button>
+                <button onClick={() => setBgMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'custom' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>自定义</button>
+              </div>
+              {bgMode === 'preset' ? (
+                <div className="flex flex-wrap gap-2">
+                  {BACKGROUNDS.map(bg => (
+                    <button
+                      key={bg} onClick={() => setSelectedBg(bg)}
+                      className={`px-4 py-2 rounded-full text-sm border ${selectedBg === bg ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300`}`}
+                    >
+                      {bg}
+                    </button>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </section>
+              ) : (
+                <input
+                  type="text" value={customBg} onChange={e => setCustomBg(e.target.value)}
+                  placeholder="输入自定义背景..."
+                  className={`w-full border border-slate-200/50 dark:border-white/10 rounded-xl p-4 text-sm outline-none ${INS_CARD} text-slate-800 dark:text-slate-100`}
+                />
+              )}
+            </section>
 
-          <section>
-            <h2 className={`text-sm font-bold ${t.prim} mb-3`}>选择背景</h2>
-            <div className="flex gap-2 mb-3">
-              <button onClick={() => setBgMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'preset' ? `${t.primary} text-white border-transparent` : `${t.panel} ${t.border} ${t.text}`}`}>预设</button>
-              <button onClick={() => setBgMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'custom' ? `${t.primary} text-white border-transparent` : `${t.panel} ${t.border} ${t.text}`}`}>自定义</button>
-            </div>
-            {bgMode === 'preset' ? (
-              <div className="flex flex-wrap gap-2">
-                {BACKGROUNDS.map(bg => (
-                  <button 
-                    key={bg} onClick={() => setSelectedBg(bg)}
-                    className={`px-4 py-2 rounded-full text-sm border ${selectedBg === bg ? `${t.primary} text-white border-transparent` : `${t.panel} ${t.border} ${t.text}`}`}
-                  >
-                    {bg}
-                  </button>
-                ))}
+            <section>
+              <h2 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">选择主题</h2>
+              <div className="flex gap-2 mb-3">
+                <button onClick={() => setThemeMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'preset' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>预设</button>
+                <button onClick={() => setThemeMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'custom' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>自定义</button>
               </div>
-            ) : (
-              <input 
-                type="text" value={customBg} onChange={e => setCustomBg(e.target.value)}
-                placeholder="输入自定义背景..."
-                className={`w-full border ${t.border} rounded-xl p-4 text-sm outline-none ${t.panel} ${t.text}`}
-              />
-            )}
-          </section>
+              {themeMode === 'preset' ? (
+                <div className="flex flex-wrap gap-2">
+                  {THEMES.map(themeItem => (
+                    <button
+                      key={themeItem} onClick={() => setSelectedTheme(themeItem)}
+                      className={`px-4 py-2 rounded-full text-sm border ${selectedTheme === themeItem ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300`}`}
+                    >
+                      {themeItem}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <input
+                  type="text" value={customTheme} onChange={e => setCustomTheme(e.target.value)}
+                  placeholder="输入自定义主题..."
+                  className={`w-full border border-slate-200/50 dark:border-white/10 rounded-xl p-4 text-sm outline-none ${INS_CARD} text-slate-800 dark:text-slate-100`}
+                />
+              )}
+            </section>
+          </div>
 
-          <section>
-            <h2 className={`text-sm font-bold ${t.prim} mb-3`}>选择主题</h2>
-            <div className="flex gap-2 mb-3">
-              <button onClick={() => setThemeMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'preset' ? `${t.primary} text-white border-transparent` : `${t.panel} ${t.border} ${t.text}`}`}>预设</button>
-              <button onClick={() => setThemeMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'custom' ? `${t.primary} text-white border-transparent` : `${t.panel} ${t.border} ${t.text}`}`}>自定义</button>
-            </div>
-            {themeMode === 'preset' ? (
-              <div className="flex flex-wrap gap-2">
-                {THEMES.map(themeItem => (
-                  <button 
-                    key={themeItem} onClick={() => setSelectedTheme(themeItem)}
-                    className={`px-4 py-2 rounded-full text-sm border ${selectedTheme === themeItem ? `${t.primary} text-white border-transparent` : `${t.panel} ${t.border} ${t.text}`}`}
-                  >
-                    {themeItem}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <input 
-                type="text" value={customTheme} onChange={e => setCustomTheme(e.target.value)}
-                placeholder="输入自定义主题..."
-                className={`w-full border ${t.border} rounded-xl p-4 text-sm outline-none ${t.panel} ${t.text}`}
-              />
-            )}
-          </section>
-        </div>
-
-        <div className={`p-5 ${t.header} backdrop-blur-lg border-t ${t.border}`}>
-          <button 
-            onClick={startGame}
-            disabled={selectedCharIds.length < 2 || (bgMode === 'custom' && !customBg) || (themeMode === 'custom' && !customTheme)}
-            className={`w-full py-4 rounded-2xl font-bold ${t.primary} text-white disabled:opacity-50 disabled:cursor-not-allowed shadow-lg`}
-          >
-            生成剧本并开始
-          </button>
+          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-5 py-4 border-t border-slate-200/50 dark:border-white/10">
+            <button
+              onClick={startGame}
+              disabled={selectedCharIds.length < 2 || (bgMode === 'custom' && !customBg) || (themeMode === 'custom' && !customTheme)}
+              className="w-full py-4 rounded-2xl font-bold bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+            >
+              生成剧本并开始
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // ─── GENERATING SCREEN ───
   if (step === 'generating') {
     return (
-      <div className={`h-full flex flex-col items-center justify-center ${t.bg} absolute inset-0 z-50`}>
-        <ScrollText size={80} className={`mb-6 ${isDark ? 'animate-pulse' : ''} ${t.prim}`} />
-        <div className={`text-xl font-bold ${t.text} mb-2`}>正在生成剧本</div>
-        <div className={`text-sm ${t.prim}`}>这可能需要几十秒的时间</div>
+      <div className={`h-full flex flex-col items-center justify-center ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
+        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="relative z-10 flex flex-col items-center">
+          <ScrollText size={80} className="mb-6 text-slate-300 dark:text-slate-600 animate-pulse" />
+          <div className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">正在生成剧本</div>
+          <div className="text-sm text-slate-400 dark:text-slate-500">这可能需要几十秒的时间</div>
+        </div>
       </div>
     );
   }
 
+  // ─── READING SCREEN ───
   if (step === 'reading') {
     return (
-      <div className={`h-full flex flex-col ${t.bg} absolute inset-0 z-50`}>
-        <div className={`${t.header} backdrop-blur-lg px-4 pt-12 pb-4 flex items-center justify-between border-b ${t.border}`}>
-          <button onClick={() => setStep('list')} className={t.prim}><ChevronLeft size={28} /></button>
-          <h1 className={`text-lg font-bold ${t.text}`}>你的剧本</h1>
-          <div className="w-8"></div>
-        </div>
+      <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
+        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="relative z-10 flex flex-col h-full">
+          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
+            <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">你的剧本</h1>
+            <div className="w-8"></div>
+          </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
-          <div className={`whitespace-pre-wrap leading-loose ${t.text}`}>{script}</div>
-        </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            <div className={`whitespace-pre-wrap leading-loose text-slate-800 dark:text-slate-100`}>{script}</div>
+          </div>
 
-        <div className={`p-5 ${t.header} backdrop-blur-lg border-t ${t.border}`}>
-          <button 
-            onClick={() => setStep('playing')}
-            className={`w-full py-4 rounded-2xl font-bold border ${t.border} ${t.text} hover:${t.panel} transition-colors`}
-          >
-            阅读完毕，进入游戏
-          </button>
+          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-5 py-4 border-t border-slate-200/50 dark:border-white/10">
+            <button
+              onClick={() => setStep('playing')}
+              className="w-full py-4 rounded-2xl font-bold bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 hover:bg-white/90 dark:hover:bg-white/20 transition-colors"
+            >
+              阅读完毕，进入游戏
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // ─── ENDING SCREEN ───
   if (step === 'ending') {
     const unlocked = caseData?.endings?.filter(ending => (useAppStore.getState().jubenshaSessions[currentSessionId || '']?.unlockedEndingIds || []).includes(ending.id)) || [];
     return (
-      <div className={`h-full flex flex-col ${t.bg} absolute inset-0 z-50`}>
-        <div className={`${t.header} backdrop-blur-lg px-4 pt-12 pb-4 flex items-center justify-between border-b ${t.border}`}>
-          <button onClick={() => setStep('list')} className={t.prim}><ChevronLeft size={28} /></button>
-          <h1 className={`text-lg font-bold ${t.text}`}>结局</h1>
-          <div className="w-8"></div>
-        </div>
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          <div className={`whitespace-pre-wrap leading-relaxed ${t.text}`}>{endingText}</div>
-          {unlocked.length > 0 && (
-            <div className={`${t.panel} border ${t.border} rounded-2xl p-4`}>
-              <div className={`font-bold mb-3 ${t.text}`}>已解锁结局</div>
-              <div className="space-y-2">
-                {unlocked.map(ending => <div key={ending.id} className={t.prim}>{ending.title}：{ending.summary}</div>)}
+      <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
+        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="relative z-10 flex flex-col h-full">
+          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
+            <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">结局</h1>
+            <div className="w-8"></div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="whitespace-pre-wrap leading-relaxed text-slate-800 dark:text-slate-100">{endingText}</div>
+            {unlocked.length > 0 && (
+              <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
+                <div className="font-bold mb-3 text-slate-800 dark:text-slate-100">已解锁结局</div>
+                <div className="space-y-2">
+                  {unlocked.map(ending => <div key={ending.id} className="text-slate-500 dark:text-slate-400">{ending.title}：{ending.summary}</div>)}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-        <div className={`p-5 grid grid-cols-2 gap-3 ${t.header} backdrop-blur-lg border-t ${t.border}`}>
-          <button onClick={() => setStep('setup')} className={`py-3 rounded-2xl border ${t.border} ${t.text} font-medium`}>再来一次</button>
-          <button onClick={() => setStep('list')} className={`py-3 rounded-2xl ${t.primary} text-white font-bold`}>返回首页</button>
+            )}
+          </div>
+          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-5 py-4 grid grid-cols-2 gap-3 border-t border-slate-200/50 dark:border-white/10">
+            <button onClick={() => setStep('setup')} className="py-3 rounded-2xl bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 font-medium">再来一次</button>
+            <button onClick={() => setStep('list')} className="py-3 rounded-2xl bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 font-bold">返回首页</button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // ─── PLAYING SCREEN ───
   return (
-    <div className={`h-full flex flex-col ${t.bg} absolute inset-0 z-50`}>
-      <div className={`${t.header} backdrop-blur-lg px-4 pt-12 pb-3 flex items-center justify-between border-b ${t.border}`}>
-        <button onClick={() => setStep('list')} className={t.prim}><ChevronLeft size={28} /></button>
-        <div className={`text-xs font-medium ${t.prim}`}>
-          {phase === 'intro' ? '破冰介绍' : phase === 'investigation1' ? '第一轮搜证' : phase === 'discussion' ? '集中讨论' : phase === 'investigation2' ? '第二轮搜证' : '最终指认'}
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowScriptModal(true)} className={`p-2 rounded-full ${t.panel}`}>
-            <BookOpen size={18} className={t.prim} />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {caseData && (
-          <div className={`${t.panel} border ${t.border} rounded-2xl p-4`}>
-            <div className={`text-xs font-semibold ${t.accent} mb-2`}>我的角色卡</div>
-            <div className="space-y-1">
-              <div><span className={`font-semibold ${t.text}`}>角色名：</span><span className={t.prim}>{caseData.roles.find(role => role.playerId === 'user')?.roleName}</span></div>
-              <div><span className={`font-semibold ${t.text}`}>公开身份：</span><span className={t.prim}>{caseData.roles.find(role => role.playerId === 'user')?.publicIdentity}</span></div>
-            </div>
+    <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
+      {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+      <div className="relative z-10 flex flex-col h-full">
+        <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-3 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
+          <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {phase === 'intro' ? '破冰介绍' : phase === 'investigation1' ? '第一轮搜证' : phase === 'discussion' ? '集中讨论' : phase === 'investigation2' ? '第二轮搜证' : '最终指认'}
           </div>
-        )}
+          <div className="flex gap-2">
+            <button onClick={() => setShowScriptModal(true)} className="p-2 rounded-xl bg-white/70 dark:bg-white/10">
+              <BookOpen size={18} className="text-slate-500 dark:text-slate-400" />
+            </button>
+          </div>
+        </div>
 
-        {caseData && (
-          <div className={`${t.panel} border ${t.border} rounded-2xl p-4`}>
-            <div className={`text-xs font-semibold ${t.prim} mb-2`}>在场角色</div>
-            <div className="space-y-2">
-              {caseData.roles.filter(role => role.playerId !== 'user').map(role => (
-                <div key={role.playerId} className="flex items-center justify-between">
-                  <div>
-                    <div className={`font-semibold ${t.text}`}>{characters[role.playerId]?.name}</div>
-                    <div className={`text-xs ${t.prim}`}>{role.publicIdentity}</div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {caseData && (
+            <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">我的角色卡</div>
+              <div className="space-y-1">
+                <div><span className="font-semibold text-slate-800 dark:text-slate-100">角色名：</span><span className="text-slate-500 dark:text-slate-400">{caseData.roles.find(role => role.playerId === 'user')?.roleName}</span></div>
+                <div><span className="font-semibold text-slate-800 dark:text-slate-100">公开身份：</span><span className="text-slate-500 dark:text-slate-400">{caseData.roles.find(role => role.playerId === 'user')?.publicIdentity}</span></div>
+              </div>
+            </div>
+          )}
+
+          {caseData && (
+            <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">在场角色</div>
+              <div className="space-y-2">
+                {caseData.roles.filter(role => role.playerId !== 'user').map(role => (
+                  <div key={role.playerId} className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold text-slate-800 dark:text-slate-100">{characters[role.playerId]?.name}</div>
+                      <div className="text-xs text-slate-500 dark:text-slate-400">{role.publicIdentity}</div>
+                    </div>
+                    <button onClick={() => handleInterrogate(role.playerId)} className="px-4 py-2 rounded-xl text-sm font-medium bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100">
+                      盘问
+                    </button>
                   </div>
-                  <button onClick={() => handleInterrogate(role.playerId)} className={`px-4 py-2 rounded-xl text-sm font-medium ${t.panel} ${t.border} ${t.text}`}>
-                    盘问
-                  </button>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {visibleClues.length > 0 && (
-          <div className={`${t.panel} border ${t.border} rounded-2xl p-4`}>
-            <div className={`text-xs font-semibold ${t.accent} mb-2`}>已发现线索</div>
-            <div className="space-y-2">
-              {visibleClues.map(clue => (
-                <div key={clue.id}>
-                  <div className={`font-semibold ${t.text}`}>{clue.title}</div>
-                  <div className={`text-sm ${t.prim}`}>{clue.detail}</div>
-                </div>
-              ))}
+          {visibleClues.length > 0 && (
+            <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
+              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">已发现线索</div>
+              <div className="space-y-2">
+                {visibleClues.map(clue => (
+                  <div key={clue.id}>
+                    <div className="font-semibold text-slate-800 dark:text-slate-100">{clue.title}</div>
+                    <div className="text-sm text-slate-500 dark:text-slate-400">{clue.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+              {msg.role === 'character' && <span className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 ml-1">{msg.name}</span>}
+              <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
+                msg.role === 'user' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 rounded-br-none' :
+                msg.role === 'system' ? 'bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl text-slate-500 dark:text-slate-400 italic text-center w-full max-w-full border border-white/30 dark:border-white/10' :
+                'bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 rounded-bl-none'
+              }`}>
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          {isAiTyping && (
+            <div className="flex items-start">
+              <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl text-slate-500 dark:text-slate-400 p-3 rounded-2xl rounded-bl-none text-sm animate-pulse border border-white/30 dark:border-white/10">
+                ...
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 py-4 space-y-3 border-t border-slate-200/50 dark:border-white/10">
+          <button onClick={advancePhase} disabled={phase === 'final_vote'} className="w-full py-2.5 rounded-xl bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 text-sm font-medium disabled:opacity-40">
+            推进阶段
+          </button>
+          <div className="flex gap-2">
+            <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-xl p-3 text-sm text-slate-800 dark:text-slate-100 flex-1">
+              {locations.map(location => <option key={location} value={location}>{location}</option>)}
+            </select>
+            <button onClick={handleInvestigate} disabled={!(phase === 'investigation1' || phase === 'investigation2')} className="px-4 rounded-xl bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-600 dark:text-slate-300 disabled:opacity-40">
+              <Search size={18} />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={accusedCharacterId || ''}
+              onChange={e => setAccusedCharacterId(e.target.value)}
+              className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-xl p-3 text-sm text-slate-800 dark:text-slate-100 flex-1"
+            >
+              <option value="">选择指认对象</option>
+              <option value="user">我自己</option>
+              {selectedCharIds.map(id => <option key={id} value={id}>{characters[id].name}</option>)}
+            </select>
+            <button onClick={handleAccuse} disabled={!accusedCharacterId || isAiTyping || phase !== 'final_vote'} className="px-5 rounded-xl bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 font-bold disabled:opacity-50">
+              <Flag size={18} />
+            </button>
+          </div>
+          <div className="flex gap-2 items-end">
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              placeholder="输入你的行动或对话..."
+              className="flex-1 bg-white/60 dark:bg-white/[0.05] border border-slate-200/50 dark:border-white/10 rounded-2xl p-3 text-sm text-slate-800 dark:text-slate-100 outline-none resize-none"
+              rows={1}
+            />
+            <button
+              onClick={() => handleSend(input)}
+              disabled={!input.trim() || isAiTyping}
+              className="w-12 h-12 rounded-2xl bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 flex items-center justify-center disabled:opacity-50"
+            >
+              <Send size={20} />
+            </button>
+          </div>
+        </div>
+
+        {showScriptModal && (
+          <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowScriptModal(false)}>
+            <div className={`${INS_BG} border border-white/30 dark:border-white/10 rounded-2xl w-full max-h-[80%] flex flex-col`} onClick={e => e.stopPropagation()}>
+              <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl p-4 border-b border-slate-200/50 dark:border-white/10 flex justify-between items-center rounded-t-2xl">
+                <h3 className="font-bold text-slate-800 dark:text-slate-100">你的剧本</h3>
+                <button onClick={() => setShowScriptModal(false)} className="text-slate-500 dark:text-slate-400">关闭</button>
+              </div>
+              <div className="p-4 overflow-y-auto whitespace-pre-wrap text-slate-800 dark:text-slate-100">
+                {script}
+              </div>
             </div>
           </div>
         )}
-        
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-            {msg.role === 'character' && <span className={`text-[10px] ${t.prim} mb-1 ml-1`}>{msg.name}</span>}
-            <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
-              msg.role === 'user' ? `${t.primary} text-white rounded-br-none` : 
-              msg.role === 'system' ? `${t.panel} ${t.prim} italic text-center w-full max-w-full border ${t.border}` : 
-              `${t.panel} ${t.text} ${t.border} rounded-bl-none`
-            }`}>
-              {msg.text}
-            </div>
-          </div>
-        ))}
-        {isAiTyping && (
-          <div className="flex items-start">
-            <div className={`${t.panel} ${t.prim} p-3 rounded-2xl rounded-bl-none text-sm animate-pulse`}>
-              ...
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
       </div>
-
-      <div className={`p-4 space-y-3 ${t.header} backdrop-blur-lg border-t ${t.border}`}>
-        <button onClick={advancePhase} disabled={phase === 'final_vote'} className={`w-full py-2.5 rounded-xl border ${t.border} ${t.text} text-sm font-medium disabled:opacity-40`}>
-          推进阶段
-        </button>
-        <div className="flex gap-2">
-          <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className={`flex-1 ${t.panel} border ${t.border} rounded-xl p-3 text-sm ${t.text}`}>
-            {locations.map(location => <option key={location} value={location}>{location}</option>)}
-          </select>
-          <button onClick={handleInvestigate} disabled={!(phase === 'investigation1' || phase === 'investigation2')} className={`px-4 rounded-xl ${t.panel} ${t.border} ${t.text} disabled:opacity-40`}>
-            <Search size={18} />
-          </button>
-        </div>
-        <div className="flex gap-2">
-          <select
-            value={accusedCharacterId || ''}
-            onChange={e => setAccusedCharacterId(e.target.value)}
-            className={`flex-1 ${t.panel} border ${t.border} rounded-xl p-3 text-sm ${t.text}`}
-          >
-            <option value="">选择指认对象</option>
-            <option value="user">我自己</option>
-            {selectedCharIds.map(id => <option key={id} value={id}>{characters[id].name}</option>)}
-          </select>
-          <button onClick={handleAccuse} disabled={!accusedCharacterId || isAiTyping || phase !== 'final_vote'} className={`px-5 rounded-xl ${t.primary} text-white font-bold disabled:opacity-50`}>
-            <Flag size={18} />
-          </button>
-        </div>
-        <div className="flex gap-2 items-end">
-          <textarea 
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="输入你的行动或对话..."
-            className={`flex-1 border ${t.border} rounded-2xl p-3 text-sm ${t.panel} ${t.text} outline-none resize-none`}
-            rows={1}
-          />
-          <button 
-            onClick={() => handleSend(input)}
-            disabled={!input.trim() || isAiTyping}
-            className={`w-12 h-12 rounded-2xl ${t.primary} text-white flex items-center justify-center disabled:opacity-50`}
-          >
-            <Send size={20} />
-          </button>
-        </div>
-      </div>
-
-      {showScriptModal && (
-        <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className={`${t.bg} border ${t.border} rounded-2xl w-full max-h-[80%] flex flex-col`}>
-            <div className={`p-4 border-b ${t.border} flex justify-between items-center`}>
-              <h3 className={`font-bold ${t.text}`}>你的剧本</h3>
-              <button onClick={() => setShowScriptModal(false)} className={t.prim}>关闭</button>
-            </div>
-            <div className={`p-4 overflow-y-auto whitespace-pre-wrap ${t.text}`}>
-              {script}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -747,6 +747,13 @@ export interface AppState {
   tarotRecords: TarotRecord[];
   movieSessions: MovieSession[];
   watchCompanionPlans: WatchCompanionPlan[];
+  musicPlayback: {
+    currentSongId: string | null;
+    isPlaying: boolean;
+    currentTime: number;
+    duration: number;
+    mode: 'full' | 'square' | 'bar' | 'hidden';
+  };
 }
 
 export interface TarotRecord {
