@@ -192,7 +192,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const [longPressTimer, setLongPressTimer] = useState<number | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const [recordingStartTime, setRecordingStartTime] = useState(0);
+  const recordingStartTimeRef = useRef(0);
   const [showTopMenu, setShowTopMenu] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -321,7 +321,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
       };
 
       recorder.start();
-      setRecordingStartTime(Date.now());
+      recordingStartTimeRef.current = Date.now();
       setIsRecording(true);
 
       // If user released before recorder was ready, stop immediately
@@ -345,7 +345,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
         const blob = new Blob(chunksRef.current, { type: recordedType });
         setAudioBlob(blob);
 
-        const duration = (Date.now() - recordingStartTime) / 1000;
+        const duration = (Date.now() - recordingStartTimeRef.current) / 1000;
         const audioUrl = URL.createObjectURL(blob);
 
         setVoiceStatusText('正在识别...');
@@ -771,28 +771,57 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
                         isUser ? (isDark ? 'bg-[#3a3a3a] text-white' : 'bg-[#e5e7eb] text-slate-800') : 'bg-white dark:bg-[#2b2b2b] text-slate-800 dark:text-white'
                       }`}
                     >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                        isUser ? 'bg-slate-200 dark:bg-slate-700' : 'bg-slate-100 dark:bg-white/10'
-                      }`}>
-                        <Volume2 size={15} className="text-slate-700 dark:text-white" />
-                      </div>
-                      <div className="flex-1 flex items-center gap-1">
-                        {[...Array(8)].map((_, i) => (
-                          <div
-                            key={i}
-                            className={`w-1 rounded-full transition-all duration-150 ${
-                              isUser ? 'bg-slate-700 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500'
-                            }`}
-                            style={{
-                              height: `${4 + Math.random() * 12}px`,
-                              animationDelay: `${i * 0.1}s`,
-                            }}
-                          />
-                        ))}
-                      </div>
-                      <div className={`text-[11px] font-medium ${isUser ? 'text-slate-600 dark:text-white/80' : 'text-slate-500 dark:text-white/60'}`}>
-                        {msg.audioLabel || '1:00'}
-                      </div>
+                      {isUser ? (
+                        <>
+                          <div className={`text-[11px] font-medium ${isUser ? 'text-slate-600 dark:text-white/80' : 'text-slate-500 dark:text-white/60'}`}>
+                            {msg.audioLabel || '1:00'}
+                          </div>
+                          <div className="flex-1 flex items-center gap-1 justify-end">
+                            {[...Array(8)].map((_, i) => (
+                              <div
+                                key={i}
+                                className={`w-1 rounded-full transition-all duration-150 ${
+                                  isUser ? 'bg-slate-700 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500'
+                                }`}
+                                style={{
+                                  height: `${4 + Math.random() * 12}px`,
+                                  animationDelay: `${i * 0.1}s`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            isUser ? 'bg-slate-200 dark:bg-slate-700' : 'bg-slate-100 dark:bg-white/10'
+                          }`}>
+                            <Volume2 size={15} className="text-slate-700 dark:text-white" />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            isUser ? 'bg-slate-200 dark:bg-slate-700' : 'bg-slate-100 dark:bg-white/10'
+                          }`}>
+                            <Volume2 size={15} className="text-slate-700 dark:text-white" />
+                          </div>
+                          <div className="flex-1 flex items-center gap-1">
+                            {[...Array(8)].map((_, i) => (
+                              <div
+                                key={i}
+                                className={`w-1 rounded-full transition-all duration-150 ${
+                                  isUser ? 'bg-slate-700 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500'
+                                }`}
+                                style={{
+                                  height: `${4 + Math.random() * 12}px`,
+                                  animationDelay: `${i * 0.1}s`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <div className={`text-[11px] font-medium ${isUser ? 'text-slate-600 dark:text-white/80' : 'text-slate-500 dark:text-white/60'}`}>
+                            {msg.audioLabel || '1:00'}
+                          </div>
+                        </>
+                      )}
                     </div>
                     {msg.audioTranscription && isUser && (
                       <div className={`mt-1 px-3 py-1.5 text-[12px] leading-relaxed rounded-xl max-w-[260px] ${
