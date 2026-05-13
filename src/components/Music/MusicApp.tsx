@@ -344,8 +344,8 @@ export default function MusicApp() {
     const playlistId = extractPlaylistId(input);
     setNeteaseLoading(true);
     try {
-      // 纯数字输入：先尝试单曲，失败了再尝试歌单
-      if (songId && /^\d+$/.test(input.trim())) {
+      // 先试单曲，失败了自动切歌单
+      if (songId) {
         try {
           const song = await importSingleSong(songId);
           addSong({ ...song, id: undefined as any }); setNeteaseInput(''); setShowNetease(false);
@@ -358,12 +358,6 @@ export default function MusicApp() {
           }
           throw new Error('无法识别该 ID 是歌曲还是歌单');
         }
-      }
-      // 链接输入：歌曲优先
-      if (songId) {
-        const song = await importSingleSong(songId);
-        addSong({ ...song, id: undefined as any }); setNeteaseInput(''); setShowNetease(false);
-        return;
       }
       if (playlistId) {
         const { playlist, songs } = await importPlaylist(playlistId);

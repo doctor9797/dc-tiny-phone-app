@@ -7,6 +7,13 @@ const API_BASE = '/api';
 
 const DEFAULT_LYRICS = '[00:00.00] 暂无歌词\n[00:10.00] 正在播放这首歌';
 
+/** 尝试把输入解析为 URL，自动补 https:// */
+function tryParseUrl(input: string): URL | null {
+  try { return new URL(input); } catch {}
+  try { return new URL('https://' + input); } catch {}
+  return null;
+}
+
 async function callApi<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
   const allParams = { endpoint, ...params };
   const query = '?' + new URLSearchParams(allParams).toString();
@@ -21,8 +28,8 @@ async function callApi<T>(endpoint: string, params?: Record<string, string>): Pr
 export function extractPlaylistId(input: string): string | null {
   if (/^\d+$/.test(input.trim())) return input.trim();
   try {
-    const url = new URL(input);
-    if (url.hostname.includes('music.163.com') || url.hostname.includes('163.cn')) {
+    const url = tryParseUrl(input);
+    if (url && (url.hostname.includes('music.163.com') || url.hostname.includes('163.cn') || url.hostname.includes('126.net') || url.hostname.includes('163cn.tv'))) {
       const pathMatch = url.pathname.match(/\/playlist\/(\d+)/);
       if (pathMatch) return pathMatch[1];
       const idParam = url.searchParams.get('id');
@@ -44,15 +51,15 @@ export function extractSongId(input: string): string | null {
   // 纯数字 ID
   if (/^\d+$/.test(input.trim())) return input.trim();
   try {
-    const url = new URL(input);
-    if (url.hostname.includes('music.163.com') || url.hostname.includes('163.cn')) {
+    const url = tryParseUrl(input);
+    if (url && (url.hostname.includes('music.163.com') || url.hostname.includes('163.cn') || url.hostname.includes('126.net') || url.hostname.includes('163cn.tv'))) {
       // ?id=xxx
       const idParam = url.searchParams.get('id');
       if (idParam) return idParam;
       // /song/xxx
       const pathMatch = url.pathname.match(/\/song\/(\d+)/);
       if (pathMatch) return pathMatch[1];
-      // #/song?id=xxx 或 #/song/xxx（网易云网页版分享的哈希格式）
+      // #/song?id=xxx 或 #/song/xxx
       const hashMatch = url.hash.match(/\/song(?:\?id=|\/)(\d+)/);
       if (hashMatch) return hashMatch[1];
     }
