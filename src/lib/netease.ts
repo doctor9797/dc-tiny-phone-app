@@ -27,7 +27,8 @@ export function extractPlaylistId(input: string): string | null {
       if (pathMatch) return pathMatch[1];
       const idParam = url.searchParams.get('id');
       if (idParam) return idParam;
-      const hashMatch = url.hash.match(/[?&]id=(\d+)/);
+      // #/playlist?id=xxx 或 #/playlist/xxx
+      const hashMatch = url.hash.match(/\/playlist(?:\?id=|\/)(\d+)/);
       if (hashMatch) return hashMatch[1];
     }
     const allNums = input.match(/(\d+)/g);
@@ -45,11 +46,15 @@ export function extractSongId(input: string): string | null {
   try {
     const url = new URL(input);
     if (url.hostname.includes('music.163.com') || url.hostname.includes('163.cn')) {
-      // /song?id=xxx 或 /song/xxx
+      // ?id=xxx
       const idParam = url.searchParams.get('id');
       if (idParam) return idParam;
+      // /song/xxx
       const pathMatch = url.pathname.match(/\/song\/(\d+)/);
       if (pathMatch) return pathMatch[1];
+      // #/song?id=xxx 或 #/song/xxx（网易云网页版分享的哈希格式）
+      const hashMatch = url.hash.match(/\/song(?:\?id=|\/)(\d+)/);
+      if (hashMatch) return hashMatch[1];
     }
   } catch {}
   return null;
@@ -112,10 +117,27 @@ export async function importPlaylist(playlistId: string): Promise<{
   const { playlist } = data;
   const name = playlist.name || '未知歌单';
   const coverImgUrl = playlist.coverImgUrl || '';
-  const tracks = playlist.tracks || [];
+  const trackIds: number[] = (playlist.trackIds || []).map((t: any) => t.id).filter(Boolean);
+  let tracks: any[] = playlist.tracks || [];
 
-  if (!tracks.length) {
+  if (!trackIds.length && !tracks.length) {
     throw new Error('歌单中没有找到歌曲');
+  }
+
+  // NetEase API 只返回部分 tracks，用 trackIds 补全缺失的歌曲详情
+  if (trackIds.length > tracks.length) {
+    const existingIds = new Set(tracks.map((t: any) => t.id));
+    const missingIds = trackIds.filter((id: number) => !existingIds.has(id));
+    // song/detail 支持批量查 ids，分批并行获取
+    for (let i = 0; i < missingIds.length; i += 20) {
+      const batch = missingIds.slice(i, i + 20);
+      try {
+        const detail = await callApi<any>('song/detail', { ids: batch.join(',') });
+        if (detail.songs?.length) {
+          tracks = [...tracks, ...detail.songs];
+        }
+      } catch {}
+    }
   }
 
   // 收集所有歌曲 ID，批量获取播放地址

@@ -60,10 +60,13 @@ const ENDPOINTS = {
   },
   'song/detail': {
     url: 'https://music.163.com/weapi/v3/song/detail',
-    buildBody: (params) => ({
-      c: JSON.stringify([{ id: parseInt(params.id) }]),
-      ids: JSON.stringify([parseInt(params.id)]),
-    }),
+    buildBody: (params) => {
+      const ids = params.ids ? params.ids.split(',').map(Number) : [parseInt(params.id)];
+      return {
+        c: JSON.stringify(ids.map(id => ({ id }))),
+        ids: JSON.stringify(ids),
+      };
+    },
   },
   'lyric': {
     url: 'https://music.163.com/weapi/song/lyric',

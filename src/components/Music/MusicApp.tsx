@@ -340,22 +340,42 @@ export default function MusicApp() {
 
   const handleNeteaseImport = async () => {
     const input = neteaseInput.trim(); if (!input) { setNeteaseInput('请输入网易云链接或 ID'); return; }
-    // Try single song first (more specific), then playlist
     const songId = extractSongId(input);
-    if (songId) {
-      setNeteaseLoading(true);
-      try { const song = await importSingleSong(songId); addSong({ ...song, id: undefined as any }); setNeteaseInput(''); setShowNetease(false); }
-      catch (err: any) { setNeteaseInput(err.message || '导入单曲失败'); }
-      finally { setNeteaseLoading(false); } return;
-    }
     const playlistId = extractPlaylistId(input);
-    if (playlistId) {
-      setNeteaseLoading(true); setNeteasePlaylist(null);
-      try { const { playlist, songs } = await importPlaylist(playlistId); setNeteasePlaylist({ name: playlist.name, coverImgUrl: playlist.coverImgUrl, songs, selected: new Set(songs.map(s => s.id)) }); setNeteaseInput(''); }
-      catch (err: any) { setNeteaseInput(err.message || '导入失败'); }
-      finally { setNeteaseLoading(false); } return;
+    setNeteaseLoading(true);
+    try {
+      // 纯数字输入：先尝试单曲，失败了再尝试歌单
+      if (songId && /^\d+$/.test(input.trim())) {
+        try {
+          const song = await importSingleSong(songId);
+          addSong({ ...song, id: undefined as any }); setNeteaseInput(''); setShowNetease(false);
+          return;
+        } catch {
+          if (playlistId) {
+            const { playlist, songs } = await importPlaylist(playlistId);
+            setNeteasePlaylist({ name: playlist.name, coverImgUrl: playlist.coverImgUrl, songs, selected: new Set(songs.map(s => s.id)) }); setNeteaseInput('');
+            return;
+          }
+          throw new Error('无法识别该 ID 是歌曲还是歌单');
+        }
+      }
+      // 链接输入：歌曲优先
+      if (songId) {
+        const song = await importSingleSong(songId);
+        addSong({ ...song, id: undefined as any }); setNeteaseInput(''); setShowNetease(false);
+        return;
+      }
+      if (playlistId) {
+        const { playlist, songs } = await importPlaylist(playlistId);
+        setNeteasePlaylist({ name: playlist.name, coverImgUrl: playlist.coverImgUrl, songs, selected: new Set(songs.map(s => s.id)) }); setNeteaseInput('');
+        return;
+      }
+      setNeteaseInput('无法识别，请输入网易云歌单/歌曲链接或 ID');
+    } catch (err: any) {
+      setNeteaseInput(err.message || '导入失败');
+    } finally {
+      setNeteaseLoading(false);
     }
-    setNeteaseInput('无法识别，请输入网易云歌单/歌曲链接或 ID');
   };
 
   const toggleNeteaseSong = (songId: string) => {
