@@ -961,8 +961,13 @@ const handlePetClick = async () => {
   const mood = typeof copetData.stats.mood === 'number' ? copetData.stats.mood : 80;
   const energy = typeof copetData.stats.energy === 'number' ? copetData.stats.energy : 100;
 
+  const INS_BG = 'bg-[#f8f8fa] dark:bg-[#0f0f12]';
+  const INS_CARD = 'bg-white/50 dark:bg-white/8 backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl';
+  const INS_TEXT = 'text-slate-800 dark:text-slate-200';
+  const INS_MUTED = 'text-slate-400 dark:text-slate-500';
+
   return (
-    <div className={`h-full w-full flex flex-col bg-amber-50 pb-safe ${isFullscreen ? 'absolute inset-0 z-[100] bg-[#c3e3f0]' : 'relative'}`}>
+    <div className={`h-full w-full flex flex-col ${INS_BG} pb-safe ${isFullscreen ? 'absolute inset-0 z-[100] bg-[#c3e3f0]' : 'relative'}`}>
       {/* Toast Notification */}
       {toastMessage && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full text-sm font-bold shadow-xl z-[110] animate-fade-in whitespace-nowrap">
@@ -992,24 +997,22 @@ const handlePetClick = async () => {
 
       {!isFullscreen && (
       <>
-      <div className="pt-14 px-6 pb-2 flex items-center justify-between shrink-0 z-10">
-          <button onClick={closeApp} className="w-10 h-10 flex text-slate-800 -ml-2 items-center"><ChevronLeft size={28} /></button>
-          <div className="flex items-center gap-2">
-             <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-orange-200" style={{ background: char.avatar.startsWith('#') ? char.avatar : '#fff' }}>
+      <div className="pt-14 px-5 pb-2 flex items-center justify-between shrink-0 z-10">
+          <button onClick={closeApp} className="w-10 h-10 flex text-slate-500 dark:text-slate-400 -ml-2 items-center"><ChevronLeft size={28} /></button>
+          <div className={`${INS_CARD} flex items-center gap-2 px-3 py-1.5`}>
+             <div className="w-7 h-7 rounded-full overflow-hidden" style={{ background: char.avatar.startsWith('#') ? char.avatar : '#fff' }}>
                {!char.avatar.startsWith('#') && <img src={char.avatar} className="w-full h-full object-cover" alt="" />}
              </div>
-             <span className="font-bold text-slate-800 text-sm">与 {char.name} 共养</span>
+             <span className={`font-semibold ${INS_TEXT} text-sm`}>与 {char.name} 共养</span>
           </div>
-          <div className="flex gap-2">
-            <button onClick={handleReset} className="px-3 py-1.5 flex items-center justify-center text-rose-500 rounded-full bg-rose-100 active:scale-95 transition-transform text-xs font-bold shadow-sm" title="放生">
-               放生
-            </button>
-          </div>
+          <button onClick={handleReset} className="px-3 py-1.5 text-rose-400 rounded-full bg-rose-50/50 dark:bg-rose-950/30 active:scale-95 transition-transform text-xs font-medium" title="放生">
+             放生
+          </button>
       </div>
 
-      <div className="flex items-center justify-center gap-4 pb-2 z-10 px-6">
-          <div className="flex items-center gap-1 bg-amber-200/50 text-amber-700 px-3 py-1 rounded-full text-xs font-bold shadow-sm">
-             <CircleDollarSign size={14} /> {(copetData.coins || 0)}
+      <div className="flex items-center justify-center gap-4 pb-2 z-10 px-5">
+          <div className={`flex items-center gap-1.5 ${INS_MUTED} text-xs font-medium`}>
+             <CircleDollarSign size={14} className="text-amber-400" /> {(copetData.coins || 0)} 金币
           </div>
       </div>
       </>
@@ -1073,99 +1076,103 @@ const handlePetClick = async () => {
 
         {!isFullscreen && (
         <>
-          <div className="bg-white rounded-[2.5rem] p-6 flex flex-col items-center relative shadow-sm border border-amber-100 mb-6 shrink-0">
-           <h1 className="text-2xl font-black text-slate-800 mb-1 tracking-tight">{copetData.name}</h1>
-           <div className="text-amber-500 font-bold text-xs bg-amber-50 px-3 py-1 rounded-full mb-4">
-             Lv.{copetData.level} {getStageName(copetData.stage)}
+          <div className={`${INS_CARD} p-5 flex flex-col items-center mb-5`}>
+           <h1 className={`text-2xl font-bold ${INS_TEXT} mb-1`}>{copetData.name}</h1>
+           <div className={`text-xs ${INS_MUTED} mb-4`}>
+             Lv.{copetData.level} · {getStageName(copetData.stage)}
            </div>
 
-           {/* Vital Stats (Progress bars) */}
-           <div className="w-full space-y-3 mb-6">
-              <div className="flex items-center gap-3">
-                 <Pizza size={16} className="text-orange-400 shrink-0"/>
-                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-orange-400 transition-all" style={{width: `${satiety}%`}}></div>
+           {/* Vital Stats (Progress bars) - more compact */}
+           <div className="w-full space-y-2.5 mb-4">
+              <div className="flex items-center gap-2.5">
+                 <Pizza size={14} className="text-orange-400 shrink-0"/>
+                 <div className="flex-1 h-1.5 bg-slate-200/50 dark:bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-orange-400/70 transition-all rounded-full" style={{width: `${satiety}%`}}></div>
                  </div>
               </div>
-              <div className="flex items-center gap-3">
-                 <Smile size={16} className="text-rose-400 shrink-0"/>
-                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-rose-400 transition-all" style={{width: `${mood}%`}}></div>
+              <div className="flex items-center gap-2.5">
+                 <Smile size={14} className="text-rose-400 shrink-0"/>
+                 <div className="flex-1 h-1.5 bg-slate-200/50 dark:bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-rose-400/70 transition-all rounded-full" style={{width: `${mood}%`}}></div>
                  </div>
               </div>
-              <div className="flex items-center gap-3">
-                 <Zap size={16} className="text-blue-400 shrink-0"/>
-                 <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-400 transition-all" style={{width: `${energy}%`}}></div>
+              <div className="flex items-center gap-2.5">
+                 <Zap size={14} className="text-blue-400 shrink-0"/>
+                 <div className="flex-1 h-1.5 bg-slate-200/50 dark:bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-400/70 transition-all rounded-full" style={{width: `${energy}%`}}></div>
                  </div>
               </div>
            </div>
 
-           {/* Core Stats */}
-           <div className="w-full grid grid-cols-3 gap-2">
-              <div className="flex flex-col items-center bg-rose-50 py-2 rounded-xl">
-                 <Heart size={16} className="text-rose-400 mb-0.5" />
-                 <span className="font-bold text-slate-800 text-sm">{copetData.stats.affection}</span>
+           {/* Core Stats - cleaner grid */}
+           <div className="w-full grid grid-cols-3 gap-2 mb-3">
+              <div className="flex flex-col items-center bg-rose-50/40 dark:bg-white/5 py-2 rounded-xl">
+                 <Heart size={14} className="text-rose-400 mb-0.5" />
+                 <span className={`font-semibold ${INS_TEXT} text-sm`}>{copetData.stats.affection}</span>
               </div>
-              <div className="flex flex-col items-center bg-blue-50 py-2 rounded-xl">
-                 <Brain size={16} className="text-blue-400 mb-0.5" />
-                 <span className="font-bold text-slate-800 text-sm">{copetData.stats.intelligence}</span>
+              <div className="flex flex-col items-center bg-blue-50/40 dark:bg-white/5 py-2 rounded-xl">
+                 <Brain size={14} className="text-blue-400 mb-0.5" />
+                 <span className={`font-semibold ${INS_TEXT} text-sm`}>{copetData.stats.intelligence}</span>
               </div>
-              <div className="flex flex-col items-center bg-orange-50 py-2 rounded-xl">
-                 <Dumbbell size={16} className="text-orange-400 mb-0.5" />
-                 <span className="font-bold text-slate-800 text-sm">{copetData.stats.strength}</span>
+              <div className="flex flex-col items-center bg-orange-50/40 dark:bg-white/5 py-2 rounded-xl">
+                 <Dumbbell size={14} className="text-orange-400 mb-0.5" />
+                 <span className={`font-semibold ${INS_TEXT} text-sm`}>{copetData.stats.strength}</span>
               </div>
            </div>
 
            {/* EXP Bar */}
-           <div className="w-full mt-4">
-             <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden relative">
-               <div className="h-full bg-amber-400 transition-all duration-500" style={{ width: `${copetData.exp}%` }}></div>
+           <div className="w-full">
+             <div className="flex justify-between text-[10px] ${INS_MUTED} mb-1">
+               <span>经验值</span>
+               <span>{copetData.exp}/100</span>
+             </div>
+             <div className="h-1 w-full bg-slate-200/50 dark:bg-white/10 rounded-full overflow-hidden">
+               <div className="h-full bg-amber-400/70 transition-all duration-500 rounded-full" style={{ width: `${copetData.exp}%` }}></div>
              </div>
            </div>
         </div>
 
-        {/* Actions Grid */}
-        <div className="grid grid-cols-4 gap-2 mb-4 shrink-0">
-           <button onClick={() => performAction('feed')} disabled={isAiThinking} className="bg-white py-3 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm active:scale-95 disabled:opacity-50">
-              <Pizza size={20} className="text-orange-500" />
-              <span className="text-[10px] font-bold text-slate-600">喂食</span>
+        {/* Actions Grid - glass style */}
+        <div className="grid grid-cols-4 gap-2.5 mb-4 shrink-0">
+           <button onClick={() => performAction('feed')} disabled={isAiThinking} className={`${INS_CARD} py-3.5 flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40`}>
+              <Pizza size={20} className="text-orange-400" />
+              <span className={`text-[10px] font-medium ${INS_MUTED}`}>喂食</span>
            </button>
-           <button onClick={() => performAction('play')} disabled={isAiThinking} className="bg-white py-3 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm active:scale-95 disabled:opacity-50">
-              <Hand size={20} className="text-rose-500" />
-              <span className="text-[10px] font-bold text-slate-600">互动</span>
+           <button onClick={() => performAction('play')} disabled={isAiThinking} className={`${INS_CARD} py-3.5 flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40`}>
+              <Hand size={20} className="text-rose-400" />
+              <span className={`text-[10px] font-medium ${INS_MUTED}`}>互动</span>
            </button>
-           <button onClick={() => performAction('study')} disabled={isAiThinking} className="bg-white py-3 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm active:scale-95 disabled:opacity-50">
-              <BookOpen size={20} className="text-blue-500" />
-              <span className="text-[10px] font-bold text-slate-600">训练</span>
+           <button onClick={() => performAction('study')} disabled={isAiThinking} className={`${INS_CARD} py-3.5 flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40`}>
+              <BookOpen size={20} className="text-blue-400" />
+              <span className={`text-[10px] font-medium ${INS_MUTED}`}>训练</span>
            </button>
-           <button onClick={() => performAction('sleep')} disabled={isAiThinking} className="bg-white py-3 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm active:scale-95 disabled:opacity-50">
-              <Battery size={20} className="text-indigo-500" />
-              <span className="text-[10px] font-bold text-slate-600">休息</span>
+           <button onClick={() => performAction('sleep')} disabled={isAiThinking} className={`${INS_CARD} py-3.5 flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40`}>
+              <Battery size={20} className="text-indigo-400" />
+              <span className={`text-[10px] font-medium ${INS_MUTED}`}>休息</span>
            </button>
-           <button onClick={() => performAction('explore')} disabled={isAiThinking} className="bg-white py-3 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm active:scale-95 disabled:opacity-50 col-span-2">
-              <Compass size={20} className="text-emerald-500" />
-              <span className="text-[10px] font-bold text-slate-600">外出探险</span>
+           <button onClick={() => performAction('explore')} disabled={isAiThinking} className={`${INS_CARD} col-span-2 py-3.5 flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform disabled:opacity-40`}>
+              <Compass size={20} className="text-emerald-400" />
+              <span className={`text-[10px] font-medium ${INS_MUTED}`}>外出探险</span>
            </button>
-           <button onClick={() => setGameMode('menu')} className="bg-gradient-to-r from-amber-400 to-orange-400 py-3 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm active:scale-95 text-white">
+           <button onClick={() => setGameMode('menu')} className="bg-slate-800/80 dark:bg-white/80 text-white dark:text-slate-800 py-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform shadow-sm">
               <Gamepad2 size={20} />
-              <span className="text-[10px] font-bold">做任务</span>
+              <span className="text-[10px] font-medium">做任务</span>
            </button>
-           <button onClick={() => setShowStore(true)} className="bg-slate-800 py-3 rounded-2xl flex flex-col items-center justify-center gap-1 shadow-sm active:scale-95 text-white">
+           <button onClick={() => setShowStore(true)} className="bg-slate-800/80 dark:bg-white/80 text-white dark:text-slate-800 py-3.5 rounded-2xl flex flex-col items-center justify-center gap-1.5 active:scale-95 transition-transform shadow-sm">
               <Store size={20} />
-              <span className="text-[10px] font-bold">去商城</span>
+              <span className="text-[10px] font-medium">去商城</span>
            </button>
         </div>
 
-        {/* Inventory / History Toggle */}
-        <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex flex-col shrink-0">
-           
+        {/* Inventory / History - glass card */}
+        <div className={`${INS_CARD} p-5 flex flex-col shrink-0 mb-4`}>
+
            {copetData.inventory && copetData.inventory.length > 0 && (
-             <div className="mb-4 pb-4 border-b border-slate-50 shrink-0">
-               <div className="text-[10px] text-slate-400 font-bold uppercase pl-1 mb-2">百宝袋</div>
+             <div className="mb-4 pb-4 border-b border-slate-200/50 dark:border-white/10 shrink-0">
+               <div className={`text-[10px] ${INS_MUTED} font-semibold uppercase pl-1 mb-2 tracking-wider`}>百宝袋</div>
                <div className="flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
                  {copetData.inventory.map((item, i) => (
-                    <div key={i} className="bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 whitespace-nowrap border border-slate-100 flex items-center gap-1.5">
+                    <div key={i} className="bg-white/40 dark:bg-white/5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap border border-slate-200/30 dark:border-white/10 flex items-center gap-1.5">
                       <Briefcase size={12} className="text-slate-400"/>
                       {item}
                     </div>
@@ -1174,23 +1181,23 @@ const handlePetClick = async () => {
              </div>
            )}
 
-           <div className="text-[10px] text-slate-400 font-bold uppercase pl-1 mb-3 shrink-0">成长日记</div>
-           <div className="flex flex-col space-y-4 pr-1">
+           <div className={`text-[10px] ${INS_MUTED} font-semibold uppercase pl-1 mb-3 shrink-0 tracking-wider`}>成长日记</div>
+           <div className="flex flex-col space-y-3 pr-1">
               {isAiThinking && (
                  <div className="flex gap-3 animate-pulse">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 shrink-0"></div>
+                    <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 shrink-0"></div>
                  </div>
               )}
               {copetData.history.map((item, idx) => (
                  <div key={idx} className="flex gap-3 items-start animate-fade-in">
-                   <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200" style={{ background: char && char.avatar.startsWith('#') ? char.avatar : '#f1f5f9' }}>
+                   <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 border border-slate-200/50 dark:border-white/10" style={{ background: char && char.avatar.startsWith('#') ? char.avatar : '#f1f5f9' }}>
                      {char && !char.avatar.startsWith('#') ? <img src={char.avatar} className="w-full h-full object-cover" alt="" /> : (char && char.avatar.startsWith('#') ? null : <User size={16} className="m-2 text-slate-400" />)}
                    </div>
                    <div className="flex-1 pt-1">
-                      <div className="text-sm font-medium text-slate-700 leading-relaxed bg-slate-50/50 p-2.5 rounded-xl rounded-tl-none inline-block">
+                      <div className={`text-sm ${INS_TEXT} leading-relaxed ${INS_CARD} p-2.5 rounded-xl rounded-tl-none inline-block`}>
                          {item.event}
                       </div>
-                      <div className="text-[10px] text-slate-400 mt-1 pl-1">
+                      <div className={`text-[10px] ${INS_MUTED} mt-1 pl-1`}>
                          {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </div>
                    </div>

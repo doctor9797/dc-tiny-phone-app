@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import { Camera, Heart, ChevronRight, MessageCircle, MoreHorizontal, Trash2, Send, X, GripVertical } from 'lucide-react';
 import { format } from 'date-fns';
-import { generateAIResponse, generateMomentReply } from '../../lib/ai';
+import { generateAIResponse } from '../../lib/ai';
 import { pinyin } from 'pinyin-pro';
 
 import ImageUploader from '../ImageUploader';
@@ -62,32 +62,40 @@ export default function Moments() {
 
   const handleAddComment = async (momentId: string) => {
     if (!commentText.trim()) return;
-    
+
     const moment = moments.find(m => m.id === momentId);
     if (!moment) return;
-    
-    let finalText = commentText.trim();
-    if (replyingTo) {
-      const authorName = replyingTo.authorId === 'user' ? settings.wechatName : characters[replyingTo.authorId]?.name;
-      if (authorName) {
-        finalText = `回复 ${authorName}: ${finalText}`;
-      }
-    }
-    
-    addMomentComment(momentId, 'user', finalText);
+
+    const text = commentText.trim();
+    const replyToId = replyingTo?.authorId;
+
+    // Store comment with replyToId (no prefix in the text)
+    addMomentComment(momentId, 'user', text, replyToId);
     setCommentText('');
     setCommentingMomentId(null);
     setReplyingTo(null);
-    
-    if (moment.authorId !== 'user') {
+
+    // Generate character reply
+    const targetId = replyToId || moment.authorId;
+    if (targetId !== 'user') {
       setIsReplying(true);
       try {
-        const reply = await generateMomentReply(moment.authorId, moment.content, commentText.trim());
+        const character = characters[targetId];
+        const targetCommentText = replyToId
+          ? (replyingTo?.text || '')
+          : text;
+        const isReplyToComment = !!replyToId;
+
+        const prompt = isReplyToComment
+          ? `你正在看朋友圈。${settings.wechatName} 回复了你的评论"${replyingTo?.text || ''}"，说："${text}"。\n请你以${character.name}的身份，根据你的性格（${character.personality}）和关系（${character.relationship}），回复${settings.wechatName}的这条回复。简短自然，15字以内，只输出回复内容。`
+          : `你发了一条朋友圈：${moment.content}\n${settings.wechatName} 评论了："${text}"\n请你以${character.name}的身份，根据你的性格（${character.personality}）和关系（${character.relationship}），回复这条评论。简短自然，15字以内，只输出回复内容。`;
+
+        const reply = await generateAIResponse(prompt);
         setTimeout(() => {
-          addMomentComment(momentId, moment.authorId, reply);
+          addMomentComment(momentId, targetId, reply.trim(), 'user');
         }, 1000 + Math.random() * 2000);
       } catch (e) {
-        console.error('Failed to generate moment reply:', e);
+        console.error('Failed to generate reply:', e);
       } finally {
         setIsReplying(false);
       }
@@ -231,78 +239,94 @@ export default function Moments() {
                     </div>
                   </div>
 
-                  {commentingMomentId === moment.id && (
-                    <div className="mt-2 flex gap-2 items-center">
-                      <input
-                        type="text"
-                        value={commentText}
-                        onChange={(e) => setCommentText(e.target.value)}
-                        placeholder={replyingTo ? `回复 ${replyingTo.authorId === 'user' ? settings.wechatName : characters[replyingTo.authorId]?.name}...` : '评论...'}
-                        className={`flex-1 border rounded-lg px-3 py-2 text-sm outline-none focus:border-[#07c160] transition-all ${
-                          isDark 
-                            ? 'bg-[#2c2c2c] border-white/10 text-white placeholder-gray-500 focus:bg-[#333]' 
-                            : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:bg-white'
-                        }`}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleAddComment(moment.id);
-                          }
-                        }}
-                      />
-                      {replyingTo && (
-                        <button
-                          onClick={() => setReplyingTo(null)}
-                          className="px-2 py-1 text-sm text-gray-500 hover:text-gray-700"
-                        >
-                          取消
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleAddComment(moment.id)}
-                        disabled={!commentText.trim() || isReplying}
-                        className="px-4 py-2 bg-[#07c160] text-white text-sm rounded-lg disabled:opacity-50 transition-all hover:bg-[#06a853] font-medium"
-                      >
-                        <Send size={16} />
-                      </button>
-                    </div>
-                  )}
-
-                  {(moment.likes.length > 0 || moment.comments.length > 0) && (
-                    <div className="mt-2 bg-[#f7f7f7] dark:bg-[#262626] p-2 rounded-md text-sm">
+                  {(moment.likes.length > 0 || moment.comments.length > 0 || commentingMomentId === moment.id) && (
+                    <div className="mt-2 bg-[#f7f7f7] dark:bg-[#262626] rounded-md text-sm overflow-hidden">
                       {moment.likes.length > 0 && (
-                        <div className="flex items-center gap-1 text-[#576b95] mb-1">
+                        <div className="flex items-center gap-1 text-[#576b95] px-3 pt-2.5 pb-1.5">
                           <Heart size={12} className="fill-[#576b95]" />
                           <span>{moment.likes.map(id => id === 'user' ? settings.wechatName : characters[id]?.name).filter(Boolean).join(', ')}</span>
                         </div>
                       )}
-                      {moment.likes.length > 0 && moment.comments.length > 0 && <div className="border-b dark:border-white/5 my-1" />}
-                      {moment.comments.map((c, i) => (
-                        <div key={i} className="mb-0.5 flex items-start justify-between group">
-                          <div className="flex-1">
-                            <span 
-                              className="text-[#576b95] font-medium cursor-pointer hover:bg-[#eaeaea] dark:hover:bg-[#333] rounded px-0.5"
-                              onClick={() => {
-                                if (c.authorId !== 'user') {
-                                  setCommentingMomentId(moment.id);
-                                  setReplyingTo(c);
-                                }
-                              }}
-                            >
-                              {c.authorId === 'user' ? settings.wechatName : characters[c.authorId]?.name}
-                            </span>
-                            <span className="dark:text-gray-100 ml-0.5">{c.text}</span>
+                      {moment.likes.length > 0 && moment.comments.length > 0 && <div className="border-b dark:border-white/5 mx-3" />}
+                      {moment.comments.map((c, i) => {
+                        const commenterName = c.authorId === 'user' ? settings.wechatName : characters[c.authorId]?.name;
+                        const replyToName = c.replyToId
+                          ? (c.replyToId === 'user' ? settings.wechatName : characters[c.replyToId]?.name)
+                          : null;
+                        return (
+                        <div key={i} className="flex items-start justify-between group hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                          <div
+                            className="flex-1 leading-relaxed break-words min-w-0 px-3 py-1.5 cursor-pointer"
+                            onClick={() => {
+                              if (c.authorId !== 'user') {
+                                setCommentingMomentId(moment.id);
+                                setReplyingTo({ authorId: c.authorId, text: c.text });
+                              }
+                            }}
+                          >
+                            <span className="text-[#576b95]">{commenterName}</span>
+                            {replyToName && (
+                              <>
+                                <span className="text-gray-800 dark:text-gray-100"> 回复了 </span>
+                                <span
+                                  className="text-[#576b95]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (c.replyToId && c.replyToId !== 'user') {
+                                      setCommentingMomentId(moment.id);
+                                      setReplyingTo({ authorId: c.replyToId, text: c.text });
+                                    }
+                                  }}
+                                >{replyToName}</span>
+                              </>
+                            )}
+                            <span className="text-gray-800 dark:text-gray-100">: {c.text}</span>
                           </div>
                           {c.authorId === 'user' && (
                             <button
                               onClick={() => handleDeleteComment(moment.id, i)}
-                              className="ml-2 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="px-3 py-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                             >
                               <Trash2 size={12} />
                             </button>
                           )}
                         </div>
-                      ))}
+                      );})}
+
+                      {/* Comment input — inside the comment area, at the bottom */}
+                      {commentingMomentId === moment.id && (
+                        <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-gray-200 dark:border-white/10 bg-white dark:bg-[#2c2c2c]">
+                          <input
+                            type="text"
+                            value={commentText}
+                            onChange={(e) => setCommentText(e.target.value)}
+                            placeholder={replyingTo ? `回复 ${replyingTo.authorId === 'user' ? settings.wechatName : characters[replyingTo.authorId]?.name}...` : '评论...'}
+                            className="flex-1 bg-transparent px-2 py-1.5 text-sm outline-none text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleAddComment(moment.id);
+                              }
+                            }}
+                          />
+                          {replyingTo && (
+                            <button
+                              onClick={() => { setReplyingTo(null); setCommentingMomentId(null); }}
+                              className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 shrink-0 px-1"
+                            >
+                              取消
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleAddComment(moment.id)}
+                            disabled={!commentText.trim() || isReplying}
+                            className="text-[#07c160] disabled:opacity-30 shrink-0 p-1"
+                          >
+                            <Send size={18} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -316,7 +340,7 @@ export default function Moments() {
 }
 
 function PostMoment({ onBack }: { onBack: () => void }) {
-  const { addMoment, characters, addMomentComment, toggleMomentLike, receiveMessage } = useAppStore();
+  const { addMoment, characters, addMomentComment, toggleMomentLike, receiveMessage, addCharacterMemory } = useAppStore();
   const { settings } = useAppStore();
   const [content, setContent] = useState('');
   const [images, setImages] = useState<string[]>([]);
@@ -469,6 +493,19 @@ function PostMoment({ onBack }: { onBack: () => void }) {
         
         for (const charId of selectedChars) {
           const char = characters[charId];
+          // Save to character's memory
+          if (content) {
+            addCharacterMemory(charId, {
+              characterId: charId,
+              type: 'event',
+              content: `${settings.wechatName} 发了一条朋友圈：${content}`,
+              summary: `${settings.wechatName} 发了朋友圈：${content.slice(0, 30)}`,
+              tags: ['朋友圈', 'moments'],
+              valence: 0.5,
+              arousal: 0.3,
+              importance: 3,
+            });
+          }
           if (Math.random() > 0.3) {
             toggleMomentLike(momentId, charId);
           }

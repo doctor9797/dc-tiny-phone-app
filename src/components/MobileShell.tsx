@@ -27,6 +27,7 @@ import MailboxApp from './Mailbox/MailboxApp';
 import ForumApp from './Forum/ForumApp';
 import IFApp from './IF/IFApp';
 import MovieApp from './Movie/MovieApp';
+import MemoryApp from './MemoryApp';
 import FloatingMusicPlayer from './Music/FloatingMusicPlayer';
 import { AnimatePresence, motion } from 'framer-motion';
 import { format, differenceInMinutes, parse, startOfDay, addDays } from 'date-fns';
@@ -333,6 +334,7 @@ export default function MobileShell() {
         case 'movie': return <MovieApp onBack={closeApp} />;
         case 'mailbox': return <MailboxApp />;
         case 'forum': return <ForumApp />;
+        case 'memory': return <MemoryApp />;
         default: return null;
       }
     })();

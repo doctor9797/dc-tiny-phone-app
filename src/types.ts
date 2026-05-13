@@ -84,7 +84,7 @@ export interface IFSession {
   updatedAt: number;
 }
 
-export type AppName = 'wechat' | 'music' | 'settings' | 'tarot' | 'bottle' | 'worldbook' | 'liarsbar' | 'jubensha' | 'ifapp' | 'vocab' | 'copet' | 'focus' | 'reader' | 'calendar' | 'billing' | 'beautify' | 'news' | 'desktoppet' | 'writing' | 'diary' | 'mailbox' | 'forum' | 'couplediary' | 'movie' | null;
+export type AppName = 'wechat' | 'music' | 'settings' | 'tarot' | 'bottle' | 'worldbook' | 'liarsbar' | 'jubensha' | 'ifapp' | 'vocab' | 'copet' | 'focus' | 'reader' | 'calendar' | 'billing' | 'beautify' | 'news' | 'desktoppet' | 'writing' | 'diary' | 'mailbox' | 'forum' | 'couplediary' | 'movie' | 'memory' | null;
 
 export interface CalendarPlan {
   id: string;
@@ -173,7 +173,7 @@ export interface Moment {
   location?: string;
   timestamp: number;
   likes: string[]; // character ids
-  comments: { authorId: string; text: string }[];
+  comments: { authorId: string; text: string; replyToId?: string }[];
 }
 
 export interface Song {
@@ -465,12 +465,6 @@ export interface CharacterCard {
   userNickname?: string;
   interactionMode?: string;
   isEnabled?: boolean;
-  memoryRounds?: number;
-  memorySummary?: string;
-  weeklyActivitySummary?: string;
-  memoryUpdatedAt?: number;
-  memoryDigestMessageCount?: number;
-  weeklyDigestMessageCount?: number;
 }
 
 export interface WorldSetting {
@@ -754,6 +748,44 @@ export interface AppState {
     duration: number;
     mode: 'full' | 'square' | 'bar' | 'hidden';
   };
+  characterMemoryBank: Record<string, CharacterMemoryEntry[]>; // keyed by characterId
+  emotionEvents: EmotionEvent[];
+}
+
+export interface CharacterMemoryEntry {
+  id: string;
+  characterId: string;
+  type: 'fact' | 'conversation' | 'event' | 'observation' | 'preference';
+  content: string;
+  summary: string;
+  tags: string[];
+  valence: number;   // 0~1, 0=negative, 0.5=neutral, 1=positive
+  arousal: number;   // 0~1, 0=calm, 0.5=normal, 1=excited
+  importance: number; // 1~10
+  createdAt: number;
+  lastAccessedAt: number;
+  accessCount: number;
+  sourceMessageIds?: string[];
+  // Phase 1: Hippocampus Memory Engine fields
+  layer?: 'deep' | 'daily' | 'diary' | 'writing' | 'ambient';
+  resolved?: 0 | 1;
+  category?: string;
+  priorVersions?: { content: string; mergedAt: number }[];
+}
+
+// ── Phase 2: Three-Layer Emotion Model ──
+
+export interface EmotionEvent {
+  id: string;
+  characterId: string;
+  paDelta: number;      // Positive Affect change (-1 to +1)
+  naDelta: number;      // Negative Affect change (-1 to +1)
+  word: string;          // primary emotion word matched from dictionary
+  valence: number;       // -1 to +1
+  arousal: number;       // 0 to 1
+  matchSource: 'exact' | 'backup' | 'substring' | 'free_form';
+  source: 'conversation' | 'decoration' | 'manual';
+  timestamp: number;
 }
 
 export interface TarotRecord {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AppState, AppNotification, Character, Message, Moment, Song, UserSettings, WorldSetting, CharacterCard, PetState, ChatGroup, Book, JubenshaSession, NewsIssue, ActivityLog, IFSession, ForumDirectThread, CoupleDiary, SpecialEvent, VoiceApiConfig } from './types';
+import { AppState, AppNotification, Character, Message, Moment, Song, UserSettings, WorldSetting, CharacterCard, PetState, ChatGroup, Book, JubenshaSession, NewsIssue, ActivityLog, IFSession, ForumDirectThread, CoupleDiary, SpecialEvent, VoiceApiConfig, CharacterMemoryEntry, EmotionEvent } from './types';
 
 const initialCharacters: Record<string, Character> = {
   bruce: { id: 'bruce', name: '布鲁斯·韦恩', avatar: '#1a1a1a', background: '#333333', bubbleColor: '#4a4a4a', relationship: '朋友', interactionMode: '沉稳', personality: '深沉、多疑、富有责任感', userNickname: '你', affection: 50, remark: '布鲁斯', isStarred: false },
@@ -47,7 +47,7 @@ const initialSettings: UserSettings = {
   signature: '这个人很懒，什么都没写',
   wechatAvatar: '#3b82f6',
   appIcons: {},
-  appOrder: ['wechat', 'music', 'settings', 'tarot', 'bottle', 'worldbook', 'liarsbar', 'jubensha', 'ifapp', 'vocab', 'copet', 'focus', 'reader', 'calendar', 'billing', 'beautify', 'news', 'desktoppet', 'writing', 'diary', 'mailbox', 'forum'],
+  appOrder: ['wechat', 'music', 'settings', 'tarot', 'bottle', 'worldbook', 'liarsbar', 'jubensha', 'ifapp', 'vocab', 'copet', 'focus', 'reader', 'calendar', 'billing', 'beautify', 'news', 'desktoppet', 'writing', 'diary', 'mailbox', 'forum', 'memory'],
   dockApps: [],
   showDock: true,
   appNameOverrides: {},
@@ -210,7 +210,7 @@ interface AppActions {
   notificationQueue: AppNotification[];
   clearNotification: () => void;
   addMoment: (moment: Omit<Moment, 'id' | 'timestamp' | 'likes' | 'comments'>) => void;
-  addMomentComment: (momentId: string, authorId: string, text: string) => void;
+  addMomentComment: (momentId: string, authorId: string, text: string, replyToId?: string) => void;
   deleteMomentComment: (momentId: string, index: number) => void;
   deleteMoment: (momentId: string) => void;
   toggleMomentLike: (momentId: string, characterId: string) => void;
@@ -294,6 +294,11 @@ interface AppActions {
   nextSong: () => void;
   prevSong: () => void;
   setMusicPlayerMode: (mode: AppState['musicPlayback']['mode']) => void;
+  addCharacterMemory: (characterId: string, entry: Omit<CharacterMemoryEntry, 'id' | 'createdAt' | 'lastAccessedAt' | 'accessCount'>) => void;
+  deleteCharacterMemory: (characterId: string, memoryId: string) => void;
+  updateCharacterMemoryAccess: (characterId: string, memoryId: string) => void;
+  clearCharacterMemories: (characterId: string) => void;
+  addEmotionEvent: (event: Omit<EmotionEvent, 'id' | 'timestamp'>) => void;
 }
 
 const getCharacterExperience = (id: string) => {
@@ -336,11 +341,7 @@ export const defaultWorldCharacters: CharacterCard[] = Object.values(initialChar
   experience: getCharacterExperience(char.id),
   relationship: char.relationship,
   viewOnMe: getCharacterViewOnMe(char.id),
-  memoryRounds: 8,
-  memorySummary: '',
-  weeklyActivitySummary: '',
-  memoryDigestMessageCount: 0,
-  weeklyDigestMessageCount: 0
+
 }));
 
 export const useAppStore = create<AppState & AppActions>()(
@@ -395,6 +396,8 @@ export const useAppStore = create<AppState & AppActions>()(
         duration: 0,
         mode: 'hidden',
       },
+      characterMemoryBank: {},
+      emotionEvents: [],
       notification: null,
       notificationQueue: [],
       clearNotification: () => set((state) => {
@@ -447,16 +450,10 @@ export const useAppStore = create<AppState & AppActions>()(
               ...setting,
               characters: setting.characters.map(char => char.id === characterId ? {
                 ...char,
-                memorySummary: '',
-                weeklyActivitySummary: '',
-                memoryUpdatedAt: undefined,
-                memoryDigestMessageCount: 0,
-                weeklyDigestMessageCount: 0
               } : char)
             }))
           };
         });
-        void import('./lib/ai').then(mod => mod.refreshCharacterMemoryDigest(characterId, { force: true })).catch(() => {});
       },
 
       clearWeChatHistory: (characterId) => {
@@ -466,15 +463,9 @@ export const useAppStore = create<AppState & AppActions>()(
             ...setting,
             characters: setting.characters.map(char => char.id === characterId ? {
               ...char,
-              memorySummary: '',
-              weeklyActivitySummary: '',
-              memoryUpdatedAt: undefined,
-              memoryDigestMessageCount: 0,
-              weeklyDigestMessageCount: 0
             } : char)
           }))
         }));
-        void import('./lib/ai').then(mod => mod.refreshCharacterMemoryDigest(characterId, { force: true })).catch(() => {});
       },
 
       sendAdvancedMessage: (channelId, msg) => set((state) => {
@@ -552,9 +543,7 @@ export const useAppStore = create<AppState & AppActions>()(
           if (cardIndex >= 0) {
             const charIndex = state.worldSettings[cardIndex].characters.findIndex(c => c.id === memberId);
             if (charIndex >= 0) {
-              state.worldSettings[cardIndex].characters[charIndex].memorySummary = '';
-              state.worldSettings[cardIndex].characters[charIndex].memoryUpdatedAt = undefined;
-              state.worldSettings[cardIndex].characters[charIndex].memoryDigestMessageCount = 0;
+
             }
           }
         }
@@ -676,7 +665,6 @@ export const useAppStore = create<AppState & AppActions>()(
           activityLogs: [log, ...(state.activityLogs || [])].slice(0, 80)
         }));
         (log.relatedCharacterIds || []).forEach(characterId => {
-          void import('./lib/ai').then(mod => mod.refreshCharacterMemoryDigest(characterId, { force: true })).catch(() => {});
         });
       },
 
@@ -870,8 +858,8 @@ export const useAppStore = create<AppState & AppActions>()(
         moments: [{ ...moment, id: Date.now().toString(), timestamp: Date.now(), likes: [], comments: [] }, ...state.moments]
       })),
 
-      addMomentComment: (momentId, authorId, text) => set((state) => ({
-        moments: state.moments.map(m => m.id === momentId ? { ...m, comments: [...m.comments, { authorId, text }] } : m)
+      addMomentComment: (momentId, authorId, text, replyToId?) => set((state) => ({
+        moments: state.moments.map(m => m.id === momentId ? { ...m, comments: [...m.comments, replyToId ? { authorId, text, replyToId } : { authorId, text }] } : m)
       })),
 
       deleteMomentComment: (momentId, index) => set((state) => ({
@@ -1052,6 +1040,60 @@ export const useAppStore = create<AppState & AppActions>()(
 
       setMusicPlayerMode: (mode) => set((state) => ({
         musicPlayback: { ...state.musicPlayback, mode }
+      })),
+
+      addCharacterMemory: (characterId, entry) => set((state) => {
+        const newMemory: CharacterMemoryEntry = {
+          ...entry,
+          id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          createdAt: Date.now(),
+          lastAccessedAt: Date.now(),
+          accessCount: 1,
+          layer: entry.layer || 'daily',
+          resolved: entry.resolved ?? 0,
+          priorVersions: entry.priorVersions || [],
+        };
+        const existing = state.characterMemoryBank[characterId] || [];
+        return {
+          characterMemoryBank: {
+            ...state.characterMemoryBank,
+            [characterId]: [newMemory, ...existing].slice(0, 200),
+          }
+        };
+      }),
+
+      deleteCharacterMemory: (characterId, memoryId) => set((state) => ({
+        characterMemoryBank: {
+          ...state.characterMemoryBank,
+          [characterId]: (state.characterMemoryBank[characterId] || []).filter(m => m.id !== memoryId),
+        }
+      })),
+
+      updateCharacterMemoryAccess: (characterId, memoryId) => set((state) => ({
+        characterMemoryBank: {
+          ...state.characterMemoryBank,
+          [characterId]: (state.characterMemoryBank[characterId] || []).map(m =>
+            m.id === memoryId ? { ...m, lastAccessedAt: Date.now(), accessCount: m.accessCount + 1 } : m
+          ),
+        }
+      })),
+
+      clearCharacterMemories: (characterId) => set((state) => ({
+        characterMemoryBank: {
+          ...state.characterMemoryBank,
+          [characterId]: [],
+        }
+      })),
+
+      addEmotionEvent: (event) => set((state) => ({
+        emotionEvents: [
+          {
+            ...event,
+            id: `emo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            timestamp: Date.now(),
+          },
+          ...state.emotionEvents,
+        ].slice(0, 500), // keep last 500
       })),
     }),
     {

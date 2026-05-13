@@ -30,11 +30,11 @@ export function extractPlaylistId(input: string): string | null {
       const hashMatch = url.hash.match(/[?&]id=(\d+)/);
       if (hashMatch) return hashMatch[1];
     }
-    const numMatch = input.match(/(\d+)$/);
-    if (numMatch) return numMatch[1];
+    const allNums = input.match(/(\d+)/g);
+    if (allNums?.length) return allNums[allNums.length - 1];
   } catch {
-    const numMatch = input.match(/(\d+)/);
-    if (numMatch) return numMatch[1];
+    const allNums = input.match(/(\d+)/g);
+    if (allNums?.length) return allNums[allNums.length - 1];
   }
   return null;
 }

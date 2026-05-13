@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store';
-import { MessageCircle, Music, Settings, Moon, MessageSquare, Book, Wine, Scroll, BookOpen, Hourglass, Calendar, Sparkles, ReceiptText, Newspaper, PenSquare, PawPrint, Bot, NotebookPen, Mail, MessagesSquare, Heart, Film } from 'lucide-react';
+import { MessageCircle, Music, Settings, Moon, MessageSquare, Book, Wine, Scroll, BookOpen, Hourglass, Calendar, Sparkles, ReceiptText, Newspaper, PenSquare, PawPrint, Bot, NotebookPen, Mail, MessagesSquare, Heart, Film, Brain } from 'lucide-react';
 import { AppFolder, AppName } from '../types';
 import {
   DndContext,
@@ -443,6 +443,7 @@ export default function HomeScreen() {
     movie: { name: '电影', icon: <Film size={32} color="white" />, color: 'bg-indigo-600' },
     mailbox: { name: '信箱', icon: <Mail size={32} color="white" />, color: 'bg-amber-500' },
     forum: { name: '论坛', icon: <MessagesSquare size={32} color="white" />, color: 'bg-stone-600' },
+    memory: { name: '记忆', icon: <Brain size={32} color="white" />, color: 'bg-purple-500' },
   };
   const allApps = useMemo(() => Object.keys(defaultApps) as AppName[], []);
   const showDock = settings.showDock !== false;

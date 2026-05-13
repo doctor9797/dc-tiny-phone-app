@@ -7,3 +7,5 @@ coverage/
 .env*
 !.env.example
 .vercel
+NeteaseCloudMusicApi-*.tgz
+voice_clone_backend/

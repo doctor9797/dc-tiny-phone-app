@@ -1,5 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
 import { useAppStore } from '../store';
+import { getTopMemoriesForPrompt, extractMemoryFromConversation } from './characterMemory';
+import { writeDecorationMoodToMemory } from './moodPool';
+import { lookupEmotion } from './emotionDictionary';
+import { getCurrentMood, buildMoodPrompt } from './moodLoop';
 
 const cleanAiText = (text: string) =>
   text
@@ -30,114 +34,8 @@ const isCharacterEnabled = (characterId: string) => {
   return true;
 };
 
-export const updateWorldCharacterCard = (characterId: string, updates: Record<string, any>) => {
-  const state = useAppStore.getState();
-  for (const setting of state.worldSettings) {
-    const found = setting.characters.find(char => char.id === characterId);
-    if (found) {
-      state.updateWorldSetting(setting.id, {
-        characters: setting.characters.map(char => char.id === characterId ? { ...char, ...updates } : char)
-      });
-      break;
-    }
-  }
-};
 
-const compactChatLines = (messages: any[], state: ReturnType<typeof useAppStore.getState>) =>
-  messages
-    .map(msg => `${msg.senderId === 'user' ? '我' : state.characters[msg.senderId]?.name || msg.senderId}:${(msg.text || '').replace(/\s+/g, ' ').slice(0, 36)}`)
-    .join('\n');
 
-export async function refreshCharacterMemoryDigest(characterId: string, options?: { force?: boolean }) {
-  const state = useAppStore.getState();
-  const history = state.chats[characterId] || [];
-  const card = state.worldSettings.flatMap(setting => setting.characters).find(char => char.id === characterId);
-  const memoryRounds = Math.max(2, Math.min(20, card?.memoryRounds || 8));
-  const olderMessages = history.slice(0, Math.max(0, history.length - memoryRounds));
-  const recentMessages = history.slice(-memoryRounds);
-  const weeklyLogs = (state.activityLogs || [])
-    .filter(log => log.timestamp >= Date.now() - 7 * 24 * 60 * 60 * 1000)
-    .filter(log => !log.relatedCharacterIds || log.relatedCharacterIds.includes(characterId))
-    .slice(0, 12);
-
-  const groupChatMessages = Object.values(state.wechatGroups || {}).flatMap(group => {
-    if (!group.members.includes(characterId)) return [];
-    return group.messages.map(msg => ({
-      ...msg,
-      groupName: group.name
-    }));
-  }).sort((a, b) => b.timestamp - a.timestamp).slice(0, memoryRounds * 2);
-
-  const userMoments = (state.moments || []).filter(m => m.authorId === 'user').slice(-6);
-
-  const shouldRefreshSummary = options?.force
-    ? true
-    : olderMessages.length >= Math.max(6, memoryRounds) &&
-      (!card?.memorySummary || history.length - (card.memoryDigestMessageCount || 0) >= memoryRounds);
-
-  const shouldRefreshWeekly = options?.force
-    ? true
-    : (recentMessages.length >= Math.max(4, Math.min(memoryRounds, 6)) || weeklyLogs.length > 0 || groupChatMessages.length > 0) &&
-      (!card?.weeklyActivitySummary || history.length - (card.weeklyDigestMessageCount || 0) >= memoryRounds);
-
-  if (!shouldRefreshSummary && !shouldRefreshWeekly) return;
-
-  const updates: Record<string, any> = {};
-
-  if (shouldRefreshSummary) {
-    const privateChatHistory = compactChatLines(olderMessages.slice(-16), state);
-    const groupChatHistory = groupChatMessages.slice(-12).map(msg => {
-      const senderName = msg.senderId === 'user' ? '我' : state.characters[msg.senderId]?.name || msg.senderId;
-      return `${msg.groupName}[${senderName}]:${(msg.text || '').replace(/\s+/g, ' ').slice(0, 36)}`;
-    }).join('\n');
-    
-    const momentsHistory = userMoments.map(m => `朋友圈:${(m.content || '').replace(/\s+/g, ' ').slice(0, 48)}`).join('\n');
-    
-    const compactHistory = [privateChatHistory, groupChatHistory, momentsHistory].filter(Boolean).join('\n');
-    
-    if (!compactHistory) {
-      updates.memorySummary = '';
-      updates.memoryUpdatedAt = undefined;
-    } else {
-      try {
-        updates.memorySummary = cleanAiText(await generateAIResponse(`请把以下长期聊天记录、群聊内容和朋友圈动态压缩成90字以内的长期记忆摘要，只保留关系变化、反复提到的偏好和重要事件，不要分点，不要Markdown。\n${compactHistory}`));
-      } catch {
-        updates.memorySummary = compactHistory.slice(-90);
-      }
-      updates.memoryUpdatedAt = Date.now();
-    }
-    updates.memoryDigestMessageCount = history.length;
-  }
-
-  if (shouldRefreshWeekly) {
-    const recentChatDigest = compactChatLines(recentMessages.slice(-8), state);
-    const groupChatDigest = groupChatMessages.slice(-6).map(msg => {
-      const senderName = msg.senderId === 'user' ? '我' : state.characters[msg.senderId]?.name || msg.senderId;
-      return `${msg.groupName}[${senderName}]:${(msg.text || '').replace(/\s+/g, ' ').slice(0, 36)}`;
-    }).join('\n');
-    const momentsDigest = userMoments.map(m => `朋友圈:${(m.content || '').replace(/\s+/g, ' ').slice(0, 36)}`).join('\n');
-    const weeklyLogDigest = weeklyLogs
-      .slice(0, 10)
-      .map(log => `${new Date(log.timestamp).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}${log.title}：${log.detail.slice(0, 24)}`)
-      .join('\n');
-
-    const allContent = [recentChatDigest, groupChatDigest, momentsDigest, weeklyLogDigest].filter(Boolean);
-    
-    if (allContent.length === 0) {
-      updates.weeklyActivitySummary = '';
-    } else {
-      try {
-        updates.weeklyActivitySummary = cleanAiText(await generateAIResponse(`请把以下“最近一周互动”、“群聊内容”、“朋友圈动态”和“最近几轮聊天”压缩成70字以内的近期记忆摘要，只保留最近的共同话题、近况和正在延续的情绪，不要分点，不要Markdown。\n最近聊天：\n${recentChatDigest || '暂无'}\n群聊内容：\n${groupChatDigest || '暂无'}\n朋友圈动态：\n${momentsDigest || '暂无'}\n最近一周活动：\n${weeklyLogDigest || '暂无'}`));
-      } catch {
-        updates.weeklyActivitySummary = allContent.join('；').slice(0, 70);
-      }
-    }
-    updates.weeklyDigestMessageCount = history.length;
-  }
-
-  if (Object.keys(updates).length === 0) return;
-  updateWorldCharacterCard(characterId, updates);
-}
 
 export async function generateAIResponse(
   prompt: string,
@@ -145,11 +43,32 @@ export async function generateAIResponse(
   images?: { mimeType: string; data: string }[],
 ): Promise<string> {
   const settings = useAppStore.getState().settings;
-  const apiKey = settings.apiKey || process.env.GEMINI_API_KEY || 'sk-local';
-
+  const apiKey = settings.apiKey || '';
   const modelName = settings.apiModel || 'gemini-2.5-flash';
-  const isGeminiModel = modelName.toLowerCase().includes('gemini');
 
+  // Server proxy mode: no local key → 走服务端代理（部署环境）
+  if (!apiKey && !settings.apiBaseUrl && !images?.length) {
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: modelName, prompt, systemInstruction }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          return data.candidates[0].content.parts[0].text;
+        }
+        if (data.error) throw new Error(data.error);
+      }
+      const errText = await res.text().catch(() => '');
+      throw new Error(errText || `代理请求失败 (${res.status})`);
+    } catch (e: any) {
+      throw new Error(e.message?.includes('配置') ? e.message : `AI 服务未配置（请在设置中填入 API Key）`);
+    }
+  }
+
+  const isGeminiModel = modelName.toLowerCase().includes('gemini');
   const isDirectGoogle = settings.apiBaseUrl && (settings.apiBaseUrl.includes('generativelanguage') || settings.apiBaseUrl.includes('googleapis'));
   const forceOpenAI = (settings.apiBaseUrl && !isDirectGoogle) || !isGeminiModel;
 
@@ -257,10 +176,24 @@ export async function getCharacterReply(
 
   const state = useAppStore.getState();
   if (!isCharacterEnabled(characterId)) return '';
+
+  // Write today's decoration mood to ambient memory (first interaction of the day)
+  writeDecorationMoodToMemory(characterId);
+
+  // Phase 5: Mood Loop — compute current emotional state and build mood prompt
+  const currentMood = getCurrentMood(characterId);
+  const moodPrompt = buildMoodPrompt(currentMood);
+
   const character = state.characters[characterId];
   const settings = state.settings;
-  const worldSettings = state.worldSettings.map(ws => `${ws.title}: ${ws.content}\n${ws.baseCode ? `[底层代码/强制执行]: ${ws.baseCode}` : ''}`).join('\n\n');
-  const persona = `姓名: ${settings.persona.name}, 年龄: ${settings.persona.age}, 职业: ${settings.persona.profession}, 身份: ${settings.persona.identity}, 外貌: ${settings.persona.appearance}, 经历: ${settings.persona.experience}`;
+  // 只取包含当前角色的那条世界书，避免其他世界书的干扰
+  const relevantWorld = state.worldSettings.find(ws =>
+    ws.characters.some(c => c.id === characterId)
+  );
+  const worldContext = relevantWorld
+    ? `${relevantWorld.title}: ${relevantWorld.content}`
+    : 'DC宇宙';
+  const persona = `${settings.persona.name},${settings.persona.age}岁,${settings.persona.profession},${settings.persona.identity}`;
   
   // Look up character in WorldBook for settings
   let card = null;
@@ -274,17 +207,15 @@ export async function getCharacterReply(
   const relationship = card?.relationship || character.relationship || '';
   const viewOnMe = card?.viewOnMe || '';
   const characterForceRequirements = normalizeForceRuleText(card?.forceRequirements);
-  const worldForceRequirements = state.worldSettings
-    .map(ws => normalizeForceRuleText(ws.baseCode))
-    .filter(Boolean)
-    .join('\n');
-  const memoryRounds = Math.max(2, Math.min(20, card?.memoryRounds || 8));
-  const memorySummary = card?.memorySummary || '';
-  const weeklyActivitySummary = card?.weeklyActivitySummary || '';
+  // 只取当前角色所在世界书的 baseCode，避免其他世界书的干扰
+  const worldForceRequirements = relevantWorld
+    ? normalizeForceRuleText(relevantWorld.baseCode)
+    : '';
+  const characterMemories = getTopMemoriesForPrompt(characterId, 250);
   const latestNewsIssue = (state.newsIssues || [])[0];
   const newsContext = latestNewsIssue
-    ? `你记得最近一期报纸日期是 ${latestNewsIssue.date}，主题是 ${latestNewsIssue.category}。其中几篇报道包括：${latestNewsIssue.articles.slice(0, 4).map(article => `${article.title}：${article.content}`).join('；')}。如果我聊到新闻、报道、日报或某篇新闻内容，你应该基于这些报道来回应，而不是装作不知道。`
-    : '目前没有可参考的报纸报道。';
+    ? `[新闻] 最新报道：${latestNewsIssue.articles.slice(0, 2).map(a => a.title).join('、')}`
+    : '';
 
   // Apply timezone offset and get accurate local time
   const timeOffsetMs = (settings.timeOffsetMinutes || 0) * 60 * 1000;
@@ -336,57 +267,46 @@ export async function getCharacterReply(
     timeContext = `现在是 ${formattedTime}，属于${timePeriod}。`;
   }
 
-  refreshCharacterMemoryDigest(characterId).catch(() => {});
 
-  const systemInstruction = `你现在扮演角色：${character.name}。
-世界观设定：
-${worldSettings}
+  // 使用世界书中该角色的设定（如果有的话），否则用默认角色数据
+  const characterName = card?.name || character.name;
+  const systemInstruction = `你现在扮演角色：${characterName}。
 
-与你对话的【我】（用户）设定：
-${persona}
+【世界观】${worldContext}
+【我】${persona}
 
-你的性格和个人经历：${personality}。 ${experience}
-你与【我】的关系：${relationship}
-你对【我】的看法：${viewOnMe}
-你对【我】的称呼：${character.userNickname || '你'}
-你保留的长期记忆摘要：${memorySummary || '暂无'}
-你对最近一周共同活动的精简记忆：${weeklyActivitySummary || '暂无'}
+【角色设定】：
+- 性格：${personality}
+- 个人经历：${experience}
+- 与【我】的关系：${relationship}
+- 你对【我】的看法：${viewOnMe}
+- 你对【我】的称呼：${character.userNickname || '你'}
+
+${characterMemories ? "【记忆】：\n" + characterMemories + "\n" : ""}
 ${newsContext}
 
-【核心强制规则】：
-1. 像真实活人一样在微信里交流。禁止使用括号或星号等任何动作描写、神态描写心理描写或旁白段落！（例如绝对不要出现"(微笑)"、"*叹气*"或"（揉揉你的头）"之类的描述，也不要出现描述动作的句子）。
-2. 禁止说话油腻，禁止使用霸总语录或俗套撩人话术，自然交流。
-3. 【禁止胡编乱造】：你只能基于你已知的记忆和世界观设定来回答。如果用户问到你不知道的事情，你必须诚实地说"我不清楚"或"这个我不记得了"，绝对不能编造、猜测或联想你不知道的信息。例如：用户问你TA叫什么名字，你只能从我给你的角色设定和聊天记忆中回答，不能自己编造。
-4. 请尽可能贴近真人的微信聊天习惯。优先发送 2 到 4 条短消息，每条尽量短、像真人微信碎碎念，而不是发一整段长文，多条消息之间必须用连续的两个换行符 "\\n\\n" 分隔。（注意不能超过4条）
-5. 如果你想给【我】发微信转账，请发送独立的一条长这样的格式的消息：[转账] ¥金额 - 说明 （比如：[转账] ¥520 - 节日快乐）。
-6. 如果你想送【我】微信礼物，请发送独立的一条消息：[礼物] 礼物名称 （比如：[礼物] 迪奥口红）。
-7. 【重要时间感知规则】：时间是 ${formattedTime}，属于${timePeriod}。你必须严格根据这个时间来说话！
-   - 早上5点到12点之间：只能说"早上好"、"上午好"、"早"等，不能说"下午"、"中午"、"晚上"
-   - 中午12点到14点之间：只能说"中午好"、"中午"、"午饭"等
-   - 下午14点到18点之间：只能说"下午好"、"下午"、"下午茶"等，不能说"早上"、"上午"、"晚上"
-   - 晚上18点到22点之间：只能说"晚上好"、"晚上"、"夜"等，不能说"下午"、"中午"、"早上"
-   - 深夜22点到次日5点之间：只能说"这么晚了"、"深夜了"、"还不睡"等，不能说"早上"、"下午"、"中午"
-   - 如果消息内容涉及问候、时间或打招呼，必须严格符合当前时间段！例如：${timePeriod}说"早安"或"早上好"是错的，应该说"晚上好"才对！
+⚠️ 禁止编造过去。不知道就说不知道，只回应当前消息，不要虚构。
 
-请严格按照角色性格和当前准确时间(${formattedTime}，${timePeriod})来回复。
-${settings.bilingual ? '必须双语：第一行中文，第二行英文。' : '请用中文回复。'}
+【规则】
+- 像真人微信聊天，禁止括号/星号等动作描写
+- 发2-4条短消息，用\n\n分隔
+- 转账：[转账] ¥金额 - 说明
+- 礼物：[礼物] 礼物名称
+- 当前${timePeriod}，问候必须匹配时间段：
+      早5-12:早上好 中午12-14:中午好 下午14-18:下午好 晚上18-22:晚上好 深夜22-5:这么晚了
+${settings.bilingual ? '必须双语：第一行中文，第二行英文。' : ''}
 
-【世界书强制执行规则】：
-${worldForceRequirements || '暂无'}
+${moodPrompt}
 
-【当前角色卡强制要求】：
-${characterForceRequirements || '暂无'}
+${worldForceRequirements ? `【强制】${worldForceRequirements}` : ''}
+${characterForceRequirements ? `【强制】${characterForceRequirements}` : ''}
+${worldForceRequirements || characterForceRequirements ? '输出前检查以上强制，冲突则重写。' : ''}`;
 
-【执行要求】：
-1. 在你输出最终回复之前，必须逐条检查是否违反了上面的“世界书强制执行规则”和“当前角色卡强制要求”。
-2. 只要有任何冲突，必须优先服从这些强制要求，重写回复。
-3. 如果这些强制要求为空，才按普通设定自由回复。`;
-
-  const recentHistory = history.slice(-memoryRounds).map(msg => 
-    `${msg.senderId === 'user' ? settings.persona.name : character.name}: ${msg.text} (时间:${new Date(msg.timestamp).toLocaleTimeString()})`
+  const recentHistory = history.slice(-1).map(msg =>
+    `${msg.senderId === 'user' ? settings.persona.name : character.name}: ${msg.text}`
   ).join('\n');
 
-  const prompt = `历史聊天记录：\n${recentHistory}\n\n${extraContext ? `[当前场景] ${extraContext}\n\n` : ''}[当前新消息] ${settings.persona.name}: ${userMessage}\n请以 ${character.name} 的身份回复：`;
+  const prompt = `[上一条]${recentHistory}\n${extraContext ? `[场景]${extraContext}\n` : ''}[消息]${userMessage}`;
 
   const draftReply = cleanAiText(await generateAIResponse(prompt, systemInstruction, images));
 
@@ -395,20 +315,115 @@ ${characterForceRequirements || '暂无'}
   }
 
   const revisedReply = cleanAiText(await generateAIResponse(
-    `请检查下面这条角色回复是否严格遵循强制要求；如果完全符合，就原样输出；如果有任何不符合，就改写成符合要求的最终回复。不要解释，不要Markdown，只输出最终回复文本。
+    `你是严格的规则审核员。检查下面的回复是否违反了强制规则。如果有任何违反，必须彻底重写；如果完全合规，就原样输出。不要解释，只输出最终文本。
 
-【世界书强制执行规则】
-${worldForceRequirements || '暂无'}
-
-【角色卡强制要求】
-${characterForceRequirements || '暂无'}
+【强制规则（必须逐条遵守，违者重写）】
+${worldForceRequirements ? `【世界书底层代码】\n${worldForceRequirements}\n` : ''}
+${characterForceRequirements ? `【角色卡强制要求】\n${characterForceRequirements}\n` : ''}
 
 【原始回复草稿】
 ${draftReply}`,
-    systemInstruction
+    `你是一个严格的规则审核机器人。你唯一的任务就是检查并修正回复。不要添加任何解释、标记或额外内容。`
   ));
 
-  return revisedReply || draftReply;
+  const finalReply = revisedReply || draftReply;
+
+  // Fire-and-forget memory extraction
+  extractMemoryFromConversation(characterId, userMessage, finalReply).catch(() => {});
+
+  // Fire-and-forget AI emotion scoring (Phase 3)
+  scoreConversationEmotion(characterId, userMessage, finalReply).catch(() => {});
+
+  return finalReply;
+}
+
+// ── Phase 3: AI Emotion Scoring ──
+// AI selects the emotion word, dictionary provides the V/A coordinates.
+// Fusion: 70% dictionary + 30% AI self-assessment.
+// Anti-sycophancy: strict prompt requiring honest scoring.
+
+const SCORE_SYSTEM_PROMPT = `你是一个严格的对话情感评分员。你的任务是从角色的视角评估一段对话带来的情感变化。
+
+规则（必须严格遵守）：
+1. 使用 PANAS 双轴模型：PA（正向情感）和 NA（负向情感）是两个独立维度
+2. 冷场就是冷场（PA低、NA低），敷衍就是敷衍（PA低），不要美化
+3. 禁止正面偏移 —— 不是每段对话都让人开心，请诚实评分
+4. 输出必须是 JSON 格式，不要任何其他内容
+
+输出 JSON 字段：
+- pa_delta: 正向情感变化 (-0.3 ~ 0.5)，对话让角色感觉越好值越大
+- na_delta: 负向情感变化 (-0.3 ~ 0.5)，对话让角色越不安/难过值越大
+- valence: AI自评情感效价 (-1 ~ 1)，负=负面 正=正面
+- arousal: AI自评唤醒度 (0 ~ 1)，0=平静 1=强烈
+- word: 最贴切的情绪词（1-2个中文字）
+- backup: 另外3个备选情绪词（用于词典匹配兜底）
+- reason: 评分理由（一句话）`;
+
+interface AIEmotionScore {
+  pa_delta: number;
+  na_delta: number;
+  valence: number;
+  arousal: number;
+  word: string;
+  backup: string[];
+  reason: string;
+}
+
+async function scoreConversationEmotion(
+  characterId: string,
+  userMessage: string,
+  characterReply: string,
+): Promise<void> {
+  const state = useAppStore.getState();
+  const charName = state.characters[characterId]?.name || characterId;
+
+  try {
+    const prompt = `评估以下对话对${charName}的情感影响。
+
+用户说：${userMessage}
+${charName}回复：${characterReply}
+
+请从${charName}的视角评估。`;
+
+    const raw = await generateAIResponse(prompt, SCORE_SYSTEM_PROMPT);
+    const parsed: AIEmotionScore = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
+    // Sanitize
+    const paDelta = Math.max(-0.3, Math.min(0.5, parsed.pa_delta ?? 0));
+    const naDelta = Math.max(-0.3, Math.min(0.5, parsed.na_delta ?? 0));
+    const aiValence = Math.max(-1, Math.min(1, parsed.valence ?? 0));
+    const aiArousal = Math.max(0, Math.min(1, parsed.arousal ?? 0.5));
+    const word = (parsed.word || '平静').trim();
+    const backups = (parsed.backup || []).filter((b): b is string => typeof b === 'string').map(b => b.trim());
+
+    // Look up dictionary V/A (multi-layer: word → backups → substring → free_form)
+    const lookup = lookupEmotion(word, backups);
+
+    // Fusion: 70% dictionary anchors the direction, 30% AI provides scene variation
+    const fusedValence = 0.7 * lookup.v + 0.3 * aiValence;
+    const fusedArousal = 0.7 * lookup.a + 0.3 * aiArousal;
+
+    // Record emotion event
+    state.addEmotionEvent({
+      characterId,
+      paDelta,
+      naDelta,
+      word: lookup.matchedWord,
+      valence: fusedValence,
+      arousal: fusedArousal,
+      matchSource: lookup.matchSource,
+      source: 'conversation',
+    });
+
+    // Affection update: 0.6 × (pa - na) + 0.4 × dictionary V
+    const affectionChange = 0.6 * (paDelta - naDelta) + 0.4 * lookup.v;
+    const currentAffection = state.characters[characterId]?.affection ?? 50;
+    const newAffection = Math.max(0, Math.min(100, currentAffection + affectionChange * 10));
+    state.updateCharacter(characterId, { affection: Math.round(newAffection) });
+
+  } catch {
+    // Silently fail — scoring is non-critical
+  }
 }
 
 export async function sendCharacterActivityFollowup(characterId: string, topicPrompt: string) {

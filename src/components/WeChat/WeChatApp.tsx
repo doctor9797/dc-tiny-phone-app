@@ -10,7 +10,7 @@ import GroupChatRoom from './GroupChatRoom';
 import { generateCharacterMoment } from '../../lib/ai';
 
 export default function WeChatApp() {
-  const { settings, updateSettings, characters, addMoment, updateCharacter } = useAppStore();
+  const { settings, updateSettings, characters, addMoment, updateCharacter, addCharacterMemory } = useAppStore();
   const [activeTab, setActiveTab] = useState<'chats' | 'contacts' | 'moments' | 'me'>('chats');
   const [activeChat, setActiveChat] = useState<string | null>(null);
   const [activeGroupChat, setActiveGroupChat] = useState<string | null>(null);
@@ -51,6 +51,19 @@ export default function WeChatApp() {
               location: momentData.location,
             });
             updateCharacter(charId, { lastMomentAt: now });
+            // Save to character's memory
+            if (momentData.content) {
+              addCharacterMemory(charId, {
+                characterId: charId,
+                type: 'event',
+                content: `我发了一条朋友圈：${momentData.content}`,
+                summary: `发了朋友圈：${momentData.content.slice(0, 30)}`,
+                tags: ['朋友圈', 'moments', '自拍'],
+                valence: 0.6,
+                arousal: 0.4,
+                importance: 4,
+              });
+            }
           } catch (e) {
             console.error(`Failed to generate moment for ${char.name}:`, e);
           }

@@ -1,15 +1,25 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useAppStore } from '../../store';
 import { loadVideoFile } from '../../lib/db';
-import { Play, Pause, SkipBack, SkipForward, X, Disc3, ChevronDown, RectangleHorizontal } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Heart, ChevronDown, GripHorizontal } from 'lucide-react';
 
 const coverColors = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6'];
+const POS_KEY = 'floating_player_pos';
+
+const formatTime = (secs: number) => {
+  if (!Number.isFinite(secs) || secs < 0) return '00:00';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
 
 export default function FloatingMusicPlayer() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioObjectUrlRef = useRef<string | null>(null);
   const currentSongId = useAppStore((s) => s.musicPlayback.currentSongId);
   const isPlaying = useAppStore((s) => s.musicPlayback.isPlaying);
+  const currentTime = useAppStore((s) => s.musicPlayback.currentTime);
+  const duration = useAppStore((s) => s.musicPlayback.duration);
   const mode = useAppStore((s) => s.musicPlayback.mode);
   const songs = useAppStore((s) => s.songs);
   const setMusicPlayback = useAppStore((s) => s.setMusicPlayback);
@@ -18,14 +28,57 @@ export default function FloatingMusicPlayer() {
   const prevSongAction = useAppStore((s) => s.prevSong);
   const setMusicPlayerMode = useAppStore((s) => s.setMusicPlayerMode);
   const openApp = useAppStore((s) => s.openApp);
+  const toggleSongFavorite = useAppStore((s) => s.toggleSongFavorite);
   const currentSong = useMemo(() => songs.find(s => s.id === currentSongId) || null, [songs, currentSongId]);
 
-  // Load audio when currentSong changes
+  // Draggable position
+  const [pos, setPos] = useState(() => {
+    try { const s = localStorage.getItem(POS_KEY); if (s) return JSON.parse(s); } catch {}
+    return { x: 24, y: 200 };
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; posX: number; posY: number } | null>(null);
+
+  // Lyrics
+  const [lyricLines, setLyricLines] = useState<{ time: number; text: string }[]>([]);
+  const [currentLyricIndex, setCurrentLyricIndex] = useState(-1);
+  const lyricContainerRef = useRef<HTMLDivElement>(null);
+
+  // Parse lyrics
+  useEffect(() => {
+    if (!currentSong?.lyrics) { setLyricLines([]); return; }
+    const lines = currentSong.lyrics.split('\n');
+    const parsed: { time: number; text: string }[] = [];
+    for (const line of lines) {
+      const match = line.match(/^\[(\d+):(\d+\.\d+)\](.*)/);
+      if (match) { const time = parseInt(match[1]) * 60 + parseFloat(match[2]); const text = match[3].trim(); if (text) parsed.push({ time, text }); }
+    }
+    parsed.sort((a, b) => a.time - b.time);
+    setLyricLines(parsed);
+    setCurrentLyricIndex(-1);
+  }, [currentSong?.lyrics]);
+
+  // Update lyric index
+  useEffect(() => {
+    if (!lyricLines.length) { setCurrentLyricIndex(-1); return; }
+    let idx = -1;
+    for (let i = lyricLines.length - 1; i >= 0; i--) { if (currentTime >= lyricLines[i].time) { idx = i; break; } }
+    setCurrentLyricIndex(idx);
+  }, [currentTime, lyricLines]);
+
+  // Auto-scroll lyrics
+  useEffect(() => {
+    if (lyricContainerRef.current && currentLyricIndex >= 0) {
+      const el = lyricContainerRef.current.children[currentLyricIndex] as HTMLElement;
+      if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }, [currentLyricIndex]);
+
+  // Load audio
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentSong) return;
     let cancelled = false;
-
     if (currentSong.dbKey) {
       loadVideoFile(currentSong.dbKey).then(blob => {
         if (cancelled || !blob || !audio) return;
@@ -39,7 +92,6 @@ export default function FloatingMusicPlayer() {
       audio.src = currentSong.url;
       if (isPlaying) audio.play().catch(() => {});
     }
-
     return () => { cancelled = true; };
   }, [currentSong?.id]);
 
@@ -47,165 +99,200 @@ export default function FloatingMusicPlayer() {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !currentSong) return;
-    if (isPlaying) {
-      audio.play().catch(() => setMusicPlayback({ isPlaying: false }));
-    } else {
-      audio.pause();
-    }
+    if (isPlaying) { audio.play().catch(() => setMusicPlayback({ isPlaying: false })); }
+    else { audio.pause(); }
   }, [isPlaying, currentSong?.id]);
 
-  // Cleanup object URL
   useEffect(() => {
-    return () => {
-      if (audioObjectUrlRef.current) URL.revokeObjectURL(audioObjectUrlRef.current);
-    };
+    return () => { if (audioObjectUrlRef.current) URL.revokeObjectURL(audioObjectUrlRef.current); };
   }, []);
 
-  const handleExpand = () => {
-    openApp('music');
-    setMusicPlayerMode('full');
-  };
+  // Shared drag handler for both modes
+  const handleDrag = useCallback((e: React.PointerEvent) => {
+    setIsDragging(true);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, posX: pos.x, posY: pos.y };
+    const move = (me: PointerEvent) => {
+      if (!dragRef.current) return;
+      setPos({ x: dragRef.current.posX + me.clientX - dragRef.current.startX, y: dragRef.current.posY + me.clientY - dragRef.current.startY });
+    };
+    const up = () => {
+      setIsDragging(false);
+      setPos(prev => { localStorage.setItem(POS_KEY, JSON.stringify(prev)); return prev; });
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  }, [pos.x, pos.y]);
+
+  const handleExpand = () => { if (!isDragging) { openApp('music'); setMusicPlayerMode('full'); } };
 
   const coverBg = currentSong?.coverUrl || coverColors[(songs.indexOf(currentSong!) + songs.length) % coverColors.length];
-  const progress = songs.length > 0 ? 0 : 0; // computed from store
+  const progress = duration ? (currentTime / duration) * 100 : 0;
+  const currentLyricText = currentLyricIndex >= 0 ? lyricLines[currentLyricIndex]?.text : '';
 
   if (mode === 'hidden' || !currentSongId) return null;
 
-  // ─── Square Mode ───
+  // ─── Square Mode (vinyl cover + lyrics + controls) ───
   if (mode === 'square') {
     return (
       <>
-        <audio
-          ref={audioRef}
-          preload="metadata"
-          onTimeUpdate={() => {
-            if (audioRef.current) setMusicPlayback({ currentTime: audioRef.current.currentTime });
-          }}
-          onLoadedMetadata={() => {
-            if (audioRef.current) setMusicPlayback({ duration: audioRef.current.duration });
-          }}
+        <audio ref={audioRef} preload="metadata"
+          onTimeUpdate={() => { if (audioRef.current) setMusicPlayback({ currentTime: audioRef.current.currentTime }); }}
+          onLoadedMetadata={() => { if (audioRef.current) setMusicPlayback({ duration: audioRef.current.duration }); }}
           onEnded={() => nextSongAction()}
           onPlay={() => setMusicPlayback({ isPlaying: true })}
           onPause={() => setMusicPlayback({ isPlaying: false })}
           onError={() => {}}
         />
-        <div className="fixed bottom-4 right-4 z-50">
-          <button
-            onClick={handleExpand}
-            className="w-[72px] h-[72px] rounded-2xl bg-black/85 backdrop-blur-xl border border-white/15 shadow-2xl overflow-hidden relative active:scale-95 transition-transform"
+        <div
+          className="fixed z-50 select-none"
+          style={{ left: pos.x, top: pos.y, touchAction: 'none' }}
+        >
+          {/* Drag handle */}
+          <div
+            onPointerDown={handleDrag}
+            className="flex justify-center mb-1 cursor-grab active:cursor-grabbing"
           >
-            {/* Spinning vinyl */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div
-                className={`w-[52px] h-[52px] rounded-full bg-cover bg-center shadow-inner ${isPlaying ? 'animate-spin' : ''}`}
-                style={{
-                  backgroundImage: currentSong?.coverUrl ? `url(${currentSong.coverUrl})` : undefined,
-                  backgroundColor: currentSong?.coverUrl ? 'transparent' : coverBg,
-                  animationDuration: '4s',
-                }}
-              >
-                <div className="w-full h-full rounded-full bg-[radial-gradient(circle,_rgba(0,0,0,0.4)_0%,_transparent_60%)]" />
+            <GripHorizontal size={14} className="text-white/40" />
+          </div>
+          {/* Main card */}
+          <div
+            onClick={handleExpand}
+            className="w-[190px] bg-black/70 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl overflow-hidden"
+          >
+            {/* Vinyl disc cover */}
+            <div className="flex justify-center pt-4 pb-2">
+              <div className="relative">
+                <div
+                  className={`w-[120px] h-[120px] rounded-full shadow-xl ${isPlaying ? 'animate-[spin_8s_linear_infinite]' : ''}`}
+                  style={{
+                    background: `linear-gradient(135deg, #3a3a3a, #111)`,
+                    padding: '5px',
+                    boxShadow: '0 4px 30px rgba(0,0,0,0.6)',
+                  }}
+                >
+                  <div
+                    className="w-full h-full rounded-full bg-cover bg-center"
+                    style={{
+                      backgroundImage: currentSong?.coverUrl ? `url(${currentSong.coverUrl})` : undefined,
+                      backgroundColor: currentSong?.coverUrl ? 'transparent' : coverBg,
+                    }}
+                  />
+                </div>
+                {/* Center label */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-7 h-7 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border border-white/10">
+                    <div className="w-2 h-2 rounded-full bg-white/60" />
+                  </div>
+                </div>
               </div>
             </div>
-            {/* Center dot */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="w-2.5 h-2.5 rounded-full bg-white/80" />
+            {/* Info */}
+            <div className="px-3 pb-1 space-y-1">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-sm font-semibold text-white truncate">{currentSong?.title || '未知歌曲'}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); if (currentSong) toggleSongFavorite(currentSong.id); }}
+                  className="shrink-0"
+                >
+                  <Heart size={14} className={currentSong?.isFavorite ? 'fill-white text-white' : 'text-white/50'} />
+                </button>
+              </div>
+              <span className="text-[10px] text-white/50 truncate block">{currentSong?.artist}</span>
             </div>
-          </button>
+            {/* Scrolling lyrics */}
+            <div className="px-3 h-10 overflow-hidden relative">
+              <div ref={lyricContainerRef} className="h-full overflow-y-auto scrollbar-hide">
+                {lyricLines.length > 0 ? (
+                  <div className="text-center text-[11px] leading-5 py-3">
+                    {lyricLines.map((line, i) => (
+                      <div key={i} className={`transition-all duration-300 ${i === currentLyricIndex ? 'text-white font-medium' : 'text-white/30'}`}>
+                        {line.text}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-white/30 text-center py-3">暂无歌词</div>
+                )}
+              </div>
+              {/* Gradient fade at edges */}
+              <div className="absolute top-0 inset-x-0 h-3 bg-gradient-to-b from-black/70 to-transparent pointer-events-none" />
+              <div className="absolute bottom-0 inset-x-0 h-3 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
+            </div>
+            {/* Progress bar */}
+            <div className="px-3 pb-1">
+              <div className="h-0.5 bg-white/15 rounded-full overflow-hidden">
+                <div className="h-full bg-white/70 rounded-full transition-all" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+            {/* Controls */}
+            <div className="px-3 pb-3 pt-1 flex items-center justify-between">
+              <button onClick={(e) => { e.stopPropagation(); prevSongAction(); }} className="text-white/60 hover:text-white p-1">
+                <SkipBack size={16} />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); togglePlayPause(); }} className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors">
+                {isPlaying ? <Pause size={14} className="text-white" /> : <Play size={14} className="text-white ml-0.5" />}
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); nextSongAction(); }} className="text-white/60 hover:text-white p-1">
+                <SkipForward size={16} />
+              </button>
+            </div>
+            {/* Mode toggle */}
+            <div className="flex justify-center pb-2">
+              <div className="flex gap-2 bg-white/10 rounded-full px-2 py-0.5">
+                <button onClick={(e) => { e.stopPropagation(); setMusicPlayerMode('bar'); }} className="text-[9px] text-white/50 hover:text-white px-1.5 py-0.5 rounded-full hover:bg-white/10">条形</button>
+                <button onClick={(e) => { e.stopPropagation(); setMusicPlayerMode('hidden'); }} className="text-[9px] text-white/50 hover:text-white px-1.5 py-0.5 rounded-full hover:bg-white/10">隐藏</button>
+              </div>
+            </div>
+          </div>
         </div>
       </>
     );
   }
 
-  // ─── Bar Mode ───
+  // ─── Bar Mode (horizontal bar, wider than tall, no cover) ───
   return (
     <>
-      <audio
-        ref={audioRef}
-        preload="metadata"
-        onTimeUpdate={() => {
-          if (audioRef.current) setMusicPlayback({ currentTime: audioRef.current.currentTime });
-        }}
-        onLoadedMetadata={() => {
-          if (audioRef.current) setMusicPlayback({ duration: audioRef.current.duration });
-        }}
+      <audio ref={audioRef} preload="metadata"
+        onTimeUpdate={() => { if (audioRef.current) setMusicPlayback({ currentTime: audioRef.current.currentTime }); }}
+        onLoadedMetadata={() => { if (audioRef.current) setMusicPlayback({ duration: audioRef.current.duration }); }}
         onEnded={() => nextSongAction()}
         onPlay={() => setMusicPlayback({ isPlaying: true })}
         onPause={() => setMusicPlayback({ isPlaying: false })}
         onError={() => {}}
       />
-      <div className="absolute bottom-0 inset-x-0 z-50 px-3 pb-[calc(env(safe-area-inset-bottom)+8px)]">
-        <div className="bg-white/88 dark:bg-zinc-900/90 backdrop-blur-2xl rounded-2xl border border-slate-200/50 dark:border-white/10 shadow-2xl overflow-hidden">
-          {/* Progress bar */}
-          <div className="h-0.5 bg-slate-200/50 dark:bg-white/10">
-            <div
-              className="h-full bg-slate-600 dark:bg-white/60 transition-all duration-300"
-              style={{ width: `${audioRef.current ? (audioRef.current.currentTime / (audioRef.current.duration || 1)) * 100 : 0}%` }}
-            />
+      <div
+        className="fixed z-50 select-none"
+        style={{ left: pos.x, top: pos.y, touchAction: 'none' }}
+      >
+        {/* Bar card - simple 4:3 rounded rectangle */}
+        <div
+          className="w-[280px] h-[210px] bg-black/70 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+        >
+          {/* Drag handle */}
+          <div onPointerDown={handleDrag} className="flex justify-center pt-2 pb-1 cursor-grab active:cursor-grabbing shrink-0">
+            <GripHorizontal size={14} className="text-white/40" />
           </div>
-
-          <div className="flex items-center gap-3 px-4 py-3">
-            {/* Cover */}
-            <button onClick={handleExpand} className="shrink-0">
-              <div
-                className="w-10 h-10 rounded-xl bg-cover bg-center shadow-sm"
-                style={{
-                  backgroundImage: currentSong?.coverUrl ? `url(${currentSong.coverUrl})` : undefined,
-                  backgroundColor: currentSong?.coverUrl ? 'transparent' : coverBg,
-                }}
-              />
-            </button>
-
-            {/* Info */}
-            <button onClick={handleExpand} className="flex-1 min-w-0 text-left">
-              <div className="text-sm font-medium text-slate-800 dark:text-white truncate">
-                {currentSong?.title || '未知歌曲'}
-              </div>
-              <div className="text-xs text-slate-400 dark:text-slate-500 truncate">
-                {currentSong?.artist || ''}
-              </div>
-            </button>
-
-            {/* Controls */}
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={(e) => { e.stopPropagation(); prevSongAction(); }}
-                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white p-1"
-              >
-                <SkipBack size={18} />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); togglePlayPause(); }}
-                className="w-8 h-8 rounded-full bg-slate-800 dark:bg-white text-white dark:text-slate-800 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
-              >
-                {isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); nextSongAction(); }}
-                className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-white p-1"
-              >
-                <SkipForward size={18} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMusicPlayerMode('square');
-                }}
-                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 p-1 hidden sm:block"
-                title="切换为方形模式"
-              >
-                <RectangleHorizontal size={16} />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setMusicPlayerMode('hidden');
-                }}
-                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 p-1"
-              >
-                <X size={16} />
-              </button>
+          {/* Song title */}
+          <div className="px-4 text-center shrink-0" onClick={handleExpand}>
+            <div className="text-sm font-semibold text-white truncate">{currentSong?.title || '未知歌曲'}</div>
+          </div>
+          {/* Lyrics */}
+          <div className="flex-1 flex items-center justify-center px-4 min-h-0" onClick={handleExpand}>
+            <div className="text-center text-[13px] text-white/60 leading-relaxed line-clamp-2">
+              {currentLyricText || '暂无歌词'}
             </div>
+          </div>
+          {/* Progress bar */}
+          <div className="px-4 pb-1 shrink-0">
+            <div className="h-1 bg-white/15 rounded-full overflow-hidden">
+              <div className="h-full bg-white/70 rounded-full transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+          {/* Play/pause */}
+          <div className="flex justify-center pb-3 shrink-0">
+            <button onClick={(e) => { e.stopPropagation(); togglePlayPause(); }} className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors">
+              {isPlaying ? <Pause size={14} className="text-white" /> : <Play size={14} className="text-white ml-0.5" />}
+            </button>
           </div>
         </div>
       </div>

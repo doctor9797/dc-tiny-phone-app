@@ -10,8 +10,8 @@ import { extractPlaylistId, extractSongId, importPlaylist, importSingleSong } fr
 const INS_BG = 'bg-[#f8f8fa] dark:bg-[#0f0f12]';
 const INS_TEXT = 'text-slate-800 dark:text-slate-200';
 const INS_MUTED = 'text-slate-400 dark:text-slate-500';
-const INS_CARD = 'bg-white/80 dark:bg-white/10 backdrop-blur-xl border border-slate-200/50 dark:border-white/10 rounded-2xl';
-const INS_INPUT = 'bg-white/60 dark:bg-white/5 backdrop-blur-sm border border-slate-200 dark:border-white/10 rounded-xl';
+const INS_CARD = 'bg-white/50 dark:bg-white/8 backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl';
+const INS_INPUT = 'bg-white/40 dark:bg-white/5 backdrop-blur-sm border border-slate-200/50 dark:border-white/10 rounded-xl';
 const INS_BTN = 'active:scale-[0.98] transition-all duration-150';
 
 const MUSIC_STORAGE_KEY = 'music_custom_bg';
@@ -340,18 +340,19 @@ export default function MusicApp() {
 
   const handleNeteaseImport = async () => {
     const input = neteaseInput.trim(); if (!input) { setNeteaseInput('请输入网易云链接或 ID'); return; }
-    const playlistId = extractPlaylistId(input);
-    if (playlistId) {
-      setNeteaseLoading(true); setNeteasePlaylist(null);
-      try { const { playlist, songs } = await importPlaylist(playlistId); setNeteasePlaylist({ name: playlist.name, coverImgUrl: playlist.coverImgUrl, songs, selected: new Set(songs.map(s => s.id)) }); setNeteaseInput(''); }
-      catch (err: any) { setNeteaseInput(err.message || '导入失败'); }
-      finally { setNeteaseLoading(false); } return;
-    }
+    // Try single song first (more specific), then playlist
     const songId = extractSongId(input);
     if (songId) {
       setNeteaseLoading(true);
       try { const song = await importSingleSong(songId); addSong({ ...song, id: undefined as any }); setNeteaseInput(''); setShowNetease(false); }
       catch (err: any) { setNeteaseInput(err.message || '导入单曲失败'); }
+      finally { setNeteaseLoading(false); } return;
+    }
+    const playlistId = extractPlaylistId(input);
+    if (playlistId) {
+      setNeteaseLoading(true); setNeteasePlaylist(null);
+      try { const { playlist, songs } = await importPlaylist(playlistId); setNeteasePlaylist({ name: playlist.name, coverImgUrl: playlist.coverImgUrl, songs, selected: new Set(songs.map(s => s.id)) }); setNeteaseInput(''); }
+      catch (err: any) { setNeteaseInput(err.message || '导入失败'); }
       finally { setNeteaseLoading(false); } return;
     }
     setNeteaseInput('无法识别，请输入网易云歌单/歌曲链接或 ID');
@@ -381,7 +382,7 @@ export default function MusicApp() {
   if (showEditSong) {
     return (
       <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`}>
-        <div className="px-4 pt-12 pb-3 flex items-center justify-between bg-white/70 dark:bg-[#1a1a1a]/70 backdrop-blur-lg border-b border-slate-200 dark:border-white/10">
+        <div className="px-4 pt-12 pb-3 flex items-center justify-between bg-white/50 dark:bg-[#1a1a1a]/50 backdrop-blur-xl border-b border-slate-200/50 dark:border-white/10">
           <button onClick={() => { setShowEditSong(false); setRecognitionHint(''); setEditingSongId(null); setEditSongData({}); }} className={`${INS_MUTED} font-medium ${INS_BTN}`}>取消</button>
           <h1 className={`text-lg font-bold ${INS_TEXT}`}>{editingSongId ? '编辑歌曲' : '添加歌曲'}</h1>
           <button onClick={handleSaveSong} className="bg-slate-800 text-white px-5 py-1.5 rounded-full text-sm font-semibold shadow-lg ${INS_BTN}">保存</button>
@@ -427,50 +428,38 @@ export default function MusicApp() {
 
         {/* Content */}
         <div className="relative z-10 flex flex-col h-full">
-          {/* Top bar */}
-          <div className="px-4 pt-12 pb-4 flex items-center justify-between">
-            <button onClick={() => setShowPlayer(false)} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center text-white ${INS_BTN}"><ChevronLeft size={22} /></button>
-            <div className="text-center flex-1 px-2">
+          {/* Top bar - extra padding to avoid notch */}
+          <div className="px-6 pt-14 pb-4 flex items-center justify-between flex-none">
+            <button onClick={() => setShowPlayer(false)} className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/25 flex items-center justify-center text-white hover:bg-white/30 transition-colors"><ChevronLeft size={22} /></button>
+            <div className="text-center flex-1 px-3">
               <div className="font-bold text-lg text-white truncate">{currentSong.title}</div>
               <div className="text-sm text-white/60 truncate">{currentSong.artist}</div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setShowFriends(true)} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center text-white ${INS_BTN}"><Users size={18} /></button>
-              <button onClick={() => { setShowPlayer(false); setMusicPlayerMode('square'); }} className="w-10 h-10 rounded-full bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center text-white ${INS_BTN}"><ChevronDown size={22} /></button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowFriends(true)} className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/25 flex items-center justify-center text-white hover:bg-white/30 transition-colors"><Users size={18} /></button>
+              <button onClick={() => { setShowPlayer(false); setMusicPlayerMode('bar'); }} className="w-11 h-11 rounded-full bg-white/20 backdrop-blur-md border border-white/25 flex items-center justify-center text-white hover:bg-white/30 transition-colors"><ChevronDown size={22} /></button>
             </div>
           </div>
 
-          {/* Friend chat overlay */}
-          {selectedFriend && (
-            <div className="absolute top-24 inset-x-4 bottom-48 z-20 flex flex-col pointer-events-none">
-              <div className="flex justify-center mb-4"><div className="bg-white/20 backdrop-blur-md px-5 py-2 rounded-full text-sm text-white font-medium">和 {characters[selectedFriend]?.name} 一起听</div></div>
-              <div className="flex-1 overflow-y-auto space-y-3 p-2 pointer-events-auto">
-                {friendChat.map((msg, i) => (<div key={i} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.sender === 'user' ? 'bg-white/30 text-white' : 'bg-white/10 text-white/90'}`}>{msg.text}</div></div>))}
-                {isFriendTyping && <div className="flex justify-start"><div className="p-3 rounded-2xl bg-white/10 text-white/50">...</div></div>}
-              </div>
-              <div className="mt-4 flex gap-2 pointer-events-auto"><input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendChat()} className="flex-1 bg-white/20 border border-white/20 rounded-full px-5 py-2.5 text-sm text-white outline-none placeholder-white/50" placeholder="聊这首歌..." /><button onClick={handleSendChat} className="bg-white text-gray-800 rounded-full px-5 py-2.5 text-sm font-semibold">发送</button></div>
-            </div>
-          )}
-
-          {/* Vinyl + lyrics */}
-          <div className={`flex-1 flex flex-col items-center justify-center p-8 ${selectedFriend ? 'opacity-30' : ''}`}>
+          {/* Vinyl + lyrics - scrollable, takes remaining space */}
+          <div className={`flex-1 flex flex-col items-center justify-center px-6 min-h-0 overflow-y-auto ${selectedFriend ? 'opacity-20' : ''}`}>
             {/* Vinyl */}
-            <div className="relative">
-              <div className={`w-56 h-56 rounded-full overflow-hidden shadow-2xl ${musicPlayback.isPlaying ? 'animate-[spin_8s_linear_infinite]' : ''}`} style={{ boxShadow: '0 0 60px rgba(0,0,0,0.4)' }}>
+            <div className="relative flex-none">
+              <div className={`w-48 h-48 rounded-full overflow-hidden shadow-2xl ${musicPlayback.isPlaying ? 'animate-[spin_8s_linear_infinite]' : ''}`} style={{ boxShadow: '0 0 60px rgba(0,0,0,0.4)' }}>
                 <img src={currentSong.coverUrl || DEFAULT_COVER} alt="cover" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).src = DEFAULT_COVER; }} />
               </div>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-16 h-16 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center border-2 border-white/10">
-                  <div className="w-4 h-4 rounded-full bg-white/80" />
+                <div className="w-14 h-14 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center border-2 border-white/10">
+                  <div className="w-3.5 h-3.5 rounded-full bg-white/80" />
                 </div>
               </div>
             </div>
 
             {/* Lyrics */}
-            <div className="mt-8 w-full max-w-sm mx-auto h-36 overflow-hidden relative">
+            <div className="mt-6 w-full max-w-sm mx-auto flex-1 min-h-0 overflow-hidden relative">
               <div ref={lyricContainerRef} className="h-full overflow-y-auto scrollbar-hide px-4" style={{ scrollBehavior: 'smooth' }}>
                 {lyricLines.length > 0 ? (
-                  <div className="text-center space-y-3 py-12">
+                  <div className="text-center space-y-3 py-6">
                     {lyricLines.map((line, i) => (
                       <div key={i} className={`transition-all duration-300 ${
                         i === currentLyricIndex ? 'text-white text-base font-bold scale-105' : i === currentLyricIndex - 1 || i === currentLyricIndex + 1 ? 'text-white/60 text-sm' : 'text-white/30 text-xs'
@@ -478,17 +467,17 @@ export default function MusicApp() {
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center text-white/50 pt-12 text-sm">暂无歌词</div>
+                  <div className="text-center text-white/50 pt-6 text-sm">暂无歌词</div>
                 )}
               </div>
             </div>
-            {playError && <div className="mt-4 text-red-300 text-sm bg-red-500/20 px-4 py-2 rounded-full">{playError}</div>}
+            {playError && <div className="mt-4 text-red-300 text-sm bg-red-500/20 px-4 py-2 rounded-full flex-none">{playError}</div>}
           </div>
 
-          {/* Bottom controls */}
-          <div className="px-6 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-4 relative z-10">
+          {/* Bottom controls - ALWAYS at bottom using absolute positioning */}
+          <div className="flex-none px-6 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3 bg-gradient-to-t from-black/60 to-transparent">
             {/* Progress bar */}
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <span className="text-xs text-white/50 w-10 text-right">{formatTime(musicPlayback.currentTime)}</span>
               <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden">
                 <div className="h-full bg-white rounded-full transition-all" style={{ width: `${musicPlayback.duration ? (musicPlayback.currentTime / musicPlayback.duration) * 100 : 0}%` }} />
@@ -496,29 +485,59 @@ export default function MusicApp() {
               <span className="text-xs text-white/50 w-10">{formatTime(musicPlayback.duration)}</span>
             </div>
             {/* Buttons */}
-            <div className="flex items-center justify-center gap-8">
-              <button onClick={() => toggleSongFavorite(currentSong.id)} className="text-white/60 hover:text-white transition-colors ${INS_BTN}">
-                <Heart size={24} className={currentSong.isFavorite ? 'fill-white text-white' : ''} />
+            <div className="flex items-center justify-center gap-6 bg-white/25 backdrop-blur-xl rounded-2xl py-3 px-5 border border-white/20 shadow-lg">
+              <button onClick={() => toggleSongFavorite(currentSong.id)} className="flex flex-col items-center gap-0.5 text-white/90 hover:text-white transition-colors min-w-[44px]">
+                <Heart size={22} className={currentSong.isFavorite ? 'fill-white text-white' : ''} />
+                <span className="text-[8px]">收藏</span>
               </button>
-              <button onClick={() => { const idx = orderedSongs.findIndex(s => s.id === currentSong.id); const prev = idx <= 0 ? orderedSongs[orderedSongs.length - 1] : orderedSongs[idx - 1]; if (prev) playSong(prev); }} className="text-white/70 hover:text-white transition-colors ${INS_BTN}"><SkipBack size={28} /></button>
-              <button onClick={togglePlay} className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center shadow-xl hover:scale-105 transition-transform border border-white/20" style={{ boxShadow: '0 0 30px rgba(0,0,0,0.3)' }}>
-                {musicPlayback.isPlaying ? <Pause size={26} className="text-white" /> : <Play size={26} className="text-white ml-1" />}
+              <button onClick={() => { const idx = orderedSongs.findIndex(s => s.id === currentSong.id); const prev = idx <= 0 ? orderedSongs[orderedSongs.length - 1] : orderedSongs[idx - 1]; if (prev) playSong(prev); }} className="flex flex-col items-center gap-0.5 text-white/90 hover:text-white transition-colors min-w-[44px]">
+                <SkipBack size={22} />
+                <span className="text-[8px]">上一首</span>
               </button>
-              <button onClick={() => { const idx = orderedSongs.findIndex(s => s.id === currentSong.id); const next = orderedSongs[(idx + 1) % orderedSongs.length]; if (next) playSong(next); }} className="text-white/70 hover:text-white transition-colors ${INS_BTN}"><SkipForward size={28} /></button>
-              <div className="w-6" />
+              <button onClick={togglePlay} className="w-14 h-14 bg-white/30 backdrop-blur-md rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-transform border border-white/30">
+                {musicPlayback.isPlaying ? <Pause size={26} className="text-white ml-0.5" /> : <Play size={26} className="text-white ml-1" />}
+              </button>
+              <button onClick={() => { const idx = orderedSongs.findIndex(s => s.id === currentSong.id); const next = orderedSongs[(idx + 1) % orderedSongs.length]; if (next) playSong(next); }} className="flex flex-col items-center gap-0.5 text-white/90 hover:text-white transition-colors min-w-[44px]">
+                <SkipForward size={22} />
+                <span className="text-[8px]">下一首</span>
+              </button>
             </div>
           </div>
 
+          {/* Friend chat overlay */}
+          {selectedFriend && (
+            <div className="absolute inset-0 z-20 flex flex-col bg-black/50 backdrop-blur-sm" onClick={() => setSelectedFriend('')}>
+              <div className="flex-1" />
+              <div className="mx-4 mb-4 bg-black/60 backdrop-blur-xl border border-white/15 rounded-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-white/10">
+                  <span className="text-sm text-white/80 font-medium">和 {characters[selectedFriend]?.name} 一起听</span>
+                  <button onClick={() => setSelectedFriend('')} className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:bg-white/20"><X size={13} /></button>
+                </div>
+                {/* Messages */}
+                <div className="h-48 overflow-y-auto space-y-2 p-3">
+                  {friendChat.map((msg, i) => (<div key={i} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[80%] p-2.5 rounded-2xl text-sm ${msg.sender === 'user' ? 'bg-white/25 text-white' : 'bg-white/10 text-white/80'}`}>{msg.text}</div></div>))}
+                  {isFriendTyping && <div className="flex justify-start"><div className="p-2.5 rounded-2xl bg-white/10 text-white/50">...</div></div>}
+                </div>
+                {/* Input */}
+                <div className="flex gap-2 p-3 border-t border-white/10">
+                  <input type="text" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendChat()} className="flex-1 bg-white/10 border border-white/10 rounded-full px-4 py-2 text-sm text-white outline-none placeholder-white/40" placeholder="聊这首歌..." />
+                  <button onClick={handleSendChat} className="bg-white/20 text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-white/30">发送</button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Friends overlay */}
           {showFriends && (
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-md z-50 flex flex-col">
-              <div className="px-4 pt-12 pb-3 flex justify-between items-center border-b border-white/10">
-                <span className={`text-lg text-white font-semibold`}>邀请好友一起听</span>
-                <button onClick={() => setShowFriends(false)} className="text-white/70 ${INS_BTN}">关闭</button>
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex flex-col">
+              <div className="px-4 pt-12 pb-3 flex items-center justify-between border-b border-white/10">
+                <span className="text-lg text-white font-semibold">邀请好友一起听</span>
+                <button onClick={() => setShowFriends(false)} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:bg-white/20"><X size={16} /></button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 {Object.values(characters).filter(c => !(c as any).isDisabled).map(char => (
-                  <div key={char.id} className="flex items-center gap-3 p-3 bg-white/10 backdrop-blur-sm rounded-xl cursor-pointer hover:bg-white/20 transition-colors ${INS_BTN}" onClick={() => handleListenWithFriend(char.id)}>
+                  <div key={char.id} className="flex items-center gap-3 p-3 bg-white/10 backdrop-blur-sm rounded-xl cursor-pointer hover:bg-white/20 transition-colors" onClick={() => handleListenWithFriend(char.id)}>
                     <div className="w-12 h-12 rounded-full" style={{ background: char.avatar.startsWith('#') ? char.avatar : `url(${char.avatar}) center/cover` }} />
                     <span className="text-white font-medium">{char.name}</span>
                   </div>
@@ -537,21 +556,21 @@ export default function MusicApp() {
       {/* Background */}
       <div className="absolute inset-0 bg-cover bg-center opacity-[0.06] dark:opacity-[0.03]" style={{ backgroundImage: `url(${bgUrl})` }} />
 
-      {/* Header */}
-      <div className="relative z-10 bg-white/70 dark:bg-[#1a1a1a]/70 backdrop-blur-lg px-4 pt-12 pb-3 flex items-center gap-3 border-b border-slate-200 dark:border-white/10">
-        <button className={`w-10 h-10 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-sm border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-300 shadow-sm ${INS_BTN}`} onClick={() => localAudioInputRef.current?.click()}>
-          <Upload size={18} />
+      {/* Header - spacious layout */}
+      <div className="relative z-10 bg-white/50 dark:bg-[#1a1a1a]/50 backdrop-blur-xl px-4 pt-14 pb-4 flex items-center gap-2 border-b border-slate-200/50 dark:border-white/10">
+        <button className={`w-9 h-9 rounded-xl bg-white/50 dark:bg-white/10 backdrop-blur-sm border border-slate-200/50 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-300 shadow-sm shrink-0 ${INS_BTN}`} onClick={() => localAudioInputRef.current?.click()}>
+          <Upload size={16} />
         </button>
-        <button className={`w-10 h-10 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-sm border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-300 shadow-sm ${INS_BTN}`} onClick={() => setShowNetease(true)}>
-          <Cloud size={18} />
+        <button className={`w-9 h-9 rounded-xl bg-white/50 dark:bg-white/10 backdrop-blur-sm border border-slate-200/50 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-300 shadow-sm shrink-0 ${INS_BTN}`} onClick={() => setShowNetease(true)}>
+          <Cloud size={16} />
         </button>
-        <div className={`flex-1 bg-white/60 dark:bg-white/5 backdrop-blur-sm border border-slate-200 dark:border-white/10 rounded-xl h-10 flex items-center px-3`}>
+        <div className={`flex-1 bg-white/50 dark:bg-white/5 backdrop-blur-sm border border-slate-200/50 dark:border-white/10 rounded-xl h-10 flex items-center px-3 shadow-sm min-w-0`}>
           <Search size={16} className="text-slate-400 shrink-0" />
-          <input type="text" value={searchUrl} onChange={e => setSearchUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} className={`bg-transparent flex-1 text-sm outline-none ${INS_TEXT} ml-2 min-w-0`} placeholder="粘贴音频链接..." />
-          <button onClick={handleSearch} className={`text-slate-400 font-medium text-xs flex items-center gap-1 shrink-0 ${INS_BTN}`}><LinkIcon size={12} />导入</button>
+          <input type="text" value={searchUrl} onChange={e => setSearchUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} className={`bg-transparent flex-1 text-sm outline-none ${INS_TEXT} ml-2 min-w-0`} placeholder="粘贴音频链接或搜索..." />
+          <button onClick={handleSearch} className={`text-slate-400 font-medium text-xs shrink-0 bg-white/60 dark:bg-white/10 px-2.5 py-1 rounded-lg ml-1 ${INS_BTN}`}><LinkIcon size={11} />导入</button>
         </div>
-        <button onClick={() => setShowBgPicker(!showBgPicker)} className={`w-10 h-10 rounded-xl bg-white/60 dark:bg-white/10 backdrop-blur-sm border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-300 shadow-sm ${INS_BTN}`}>
-          <ImageIcon size={18} />
+        <button onClick={() => setShowBgPicker(!showBgPicker)} className={`w-9 h-9 rounded-xl bg-white/50 dark:bg-white/10 backdrop-blur-sm border border-slate-200/50 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-300 shadow-sm shrink-0 ${INS_BTN}`}>
+          <ImageIcon size={16} />
         </button>
       </div>
 
@@ -560,7 +579,7 @@ export default function MusicApp() {
 
       {/* Background picker */}
       {showBgPicker && (
-        <div className="relative z-10 bg-white/90 dark:bg-[#1a1a1a]/90 backdrop-blur-xl border-b border-slate-200 dark:border-white/10 px-4 py-4">
+        <div className="relative z-10 bg-white/60 dark:bg-[#1a1a1a]/90 backdrop-blur-xl border-b border-slate-200 dark:border-white/10 px-4 py-4">
           <div className="flex items-center justify-between mb-3">
             <span className={`text-xs font-semibold ${INS_MUTED} uppercase tracking-wider`}>背景图</span>
             <button onClick={() => fileInputRef.current?.click()} className={`text-xs text-slate-500 font-medium ${INS_BTN}`}>从相册导入</button>
@@ -607,14 +626,14 @@ export default function MusicApp() {
 
       {/* NetEase import bottom sheet */}
       {showNetease && (
-        <div className="absolute inset-0 z-50 flex flex-col bg-black/40" onClick={() => { setShowNetease(false); setNeteasePlaylist(null); }}>
+        <div className="absolute inset-0 z-50 flex flex-col bg-black/80" onClick={() => { setShowNetease(false); setNeteasePlaylist(null); }}>
           <div className="mt-auto max-h-[85%] flex flex-col rounded-t-3xl overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="bg-white/90 dark:bg-[#1a1a1a]/95 backdrop-blur-2xl px-5 pt-5 pb-2 flex items-center justify-between border-b border-slate-200 dark:border-white/10">
+            <div className="bg-white/60 dark:bg-[#1a1a1a]/95 backdrop-blur-2xl px-5 pt-5 pb-2 flex items-center justify-between border-b border-slate-200 dark:border-white/10">
               <h2 className={`text-lg font-bold ${INS_TEXT}`}>导入网易云歌单</h2>
               <button onClick={() => { setShowNetease(false); setNeteasePlaylist(null); }} className={`p-2 rounded-full ${INS_MUTED} hover:text-slate-700 ${INS_BTN}`}><X size={20} /></button>
             </div>
             {!neteasePlaylist ? (
-              <div className="bg-white/90 dark:bg-[#1a1a1a]/95 backdrop-blur-2xl p-5">
+              <div className="bg-white/60 dark:bg-[#1a1a1a]/95 backdrop-blur-2xl p-5">
                 <div className={`flex items-center gap-3 ${INS_INPUT} p-2`}>
                   <input type="text" value={neteaseInput} onChange={e => setNeteaseInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleNeteaseImport()} className={`flex-1 bg-transparent ${INS_TEXT} text-sm outline-none px-2`} placeholder="粘贴歌单链接或歌单 ID..." />
                   <button onClick={handleNeteaseImport} disabled={neteaseLoading} className={`bg-slate-800 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2 ${neteaseLoading ? 'opacity-50' : ''} ${INS_BTN}`}>
@@ -624,7 +643,7 @@ export default function MusicApp() {
                 <p className={`text-xs ${INS_MUTED} mt-3 text-center`}>支持 music.163.com 链接或纯数字歌单 ID</p>
               </div>
             ) : (
-              <div className="bg-white/90 dark:bg-[#1a1a1a]/95 backdrop-blur-2xl flex-1 overflow-y-auto p-4 space-y-2">
+              <div className="bg-white/60 dark:bg-[#1a1a1a]/95 backdrop-blur-2xl flex-1 overflow-y-auto p-4 space-y-2">
                 <div className="flex items-center gap-4 mb-4 pb-3 border-b border-slate-200 dark:border-white/10">
                   <div className="w-14 h-14 rounded-xl overflow-hidden shadow-md flex-shrink-0 bg-slate-100 dark:bg-white/5">
                     {neteasePlaylist.coverImgUrl && <img src={neteasePlaylist.coverImgUrl} alt="" className="w-full h-full object-cover" />}
@@ -664,7 +683,7 @@ export default function MusicApp() {
               <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} className="w-10 h-10 rounded-xl bg-slate-800 dark:bg-white text-white dark:text-slate-800 flex items-center justify-center shadow-md ${INS_BTN}">
                 {musicPlayback.isPlaying ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
               </button>
-              <button onClick={(e) => { e.stopPropagation(); setMusicPlayerMode('square'); }} className="w-10 h-10 rounded-xl bg-white/50 dark:bg-white/10 border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 ${INS_BTN}">
+              <button onClick={(e) => { e.stopPropagation(); setMusicPlayerMode('bar'); }} className="w-10 h-10 rounded-xl bg-white/50 dark:bg-white/10 border border-slate-200 dark:border-white/10 flex items-center justify-center text-slate-500 dark:text-slate-400 ${INS_BTN}">
                 <ChevronDown size={18} />
               </button>
             </div>

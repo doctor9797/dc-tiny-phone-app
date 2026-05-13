@@ -4,12 +4,12 @@ import { ChevronLeft, Scroll, ScrollText, Users, BookOpen, Send, Lightbulb, Sear
 import { generateAIResponse, sendCharacterActivityFollowup } from '../../lib/ai';
 import { JubenshaCaseData } from '../../types';
 
-const INS_BG = 'bg-[#f8f8fa] dark:bg-[#0f0f12]';
-const INS_CARD = 'bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10';
-const INS_INPUT = 'bg-white/60 dark:bg-white/[0.05] border border-slate-200/50 dark:border-white/10';
-const INS_TEXT = 'text-slate-800 dark:text-slate-100';
-const INS_MUTED = 'text-slate-400 dark:text-slate-500';
-const INS_BTN = 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 hover:opacity-90';
+const INS_BG = 'bg-[#f5f0eb]';
+const INS_CARD = 'bg-white/80 backdrop-blur-2xl border border-white/60 rounded-2xl';
+const INS_INPUT = 'bg-white/70 border border-[#e8ddd0] rounded-xl';
+const INS_TEXT = 'text-[#2c2420]';
+const INS_MUTED = 'text-[#8a7a6a]';
+const INS_BTN = 'bg-[#2c2420] text-[#f5f0eb] hover:opacity-90';
 
 const BG_STORAGE_KEY = 'jubensha_bg';
 const BG_PRESETS = [
@@ -42,8 +42,8 @@ export default function JubenshaApp() {
   const [customTheme, setCustomTheme] = useState('');
 
   const [bgUrl, setBgUrl] = useState(() => {
-    try { return localStorage.getItem(BG_STORAGE_KEY) || ''; }
-    catch { return ''; }
+    try { return localStorage.getItem(BG_STORAGE_KEY) || BG_PRESETS[0]; }
+    catch { return BG_PRESETS[0]; }
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -372,7 +372,6 @@ ${clueContext}
     backgroundImage: `url(${bgUrl})`,
     backgroundSize: 'cover',
     backgroundPosition: 'center',
-    backgroundAttachment: 'fixed',
   } : {};
 
   // ─── LIST SCREEN ───
@@ -380,13 +379,13 @@ ${clueContext}
     const sessionsList = Object.values(jubenshaSessions).sort((a, b) => b.updatedAt - a.updatedAt);
     return (
       <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
-        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
         <div className="relative z-10 flex flex-col h-full">
-          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
-            <button onClick={closeApp} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">剧本杀</h1>
+          <div className="bg-white/40 backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-stone-200/50">
+            <button onClick={closeApp} className="text-stone-500"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-[#2c2420]">剧本杀</h1>
             <div className="flex gap-2">
-              <button onClick={() => setShowBgPicker(true)} className="p-1.5 rounded-xl bg-white/70 dark:bg-white/10 text-slate-500 dark:text-slate-400">
+              <button onClick={() => setShowBgPicker(true)} className="p-1.5 rounded-xl bg-white/40 text-stone-500">
                 <ImageIcon size={18} />
               </button>
               <div className="w-8" />
@@ -396,7 +395,7 @@ ${clueContext}
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
             <button
               onClick={() => setStep('setup')}
-              className="w-full bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4 flex items-center justify-center gap-3 bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 font-semibold shadow-lg"
+              className="w-full bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-lg font-semibold rounded-2xl p-4 flex items-center justify-center gap-3 shadow-lg"
             >
               <Plus size={20} />
               开启新剧本
@@ -404,16 +403,16 @@ ${clueContext}
 
             {sessionsList.length === 0 ? (
                <div className="text-center py-16">
-                 <ScrollText size={64} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
-                 <p className="font-medium text-slate-800 dark:text-slate-200">暂无游玩记录</p>
-                 <p className="text-sm text-slate-400 dark:text-slate-500 mt-1">点击上方按钮开始新剧本</p>
+                 <ScrollText size={64} className="mx-auto mb-4 text-stone-300" />
+                 <p className="font-medium text-[#2c2420]">暂无游玩记录</p>
+                 <p className="text-sm text-stone-400 mt-1">点击上方按钮开始新剧本</p>
                </div>
             ) : (
               sessionsList.map(session => (
-                <div key={session.id} className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4 relative">
+                <div key={session.id} className="bg-white/50 backdrop-blur-xl border border-white/30 rounded-2xl p-4 relative">
                    <button
                      onClick={() => deleteJubenshaSession(session.id)}
-                     className="absolute top-4 right-4 p-2 rounded-full bg-red-50 dark:bg-red-900/20 text-red-500"
+                     className="absolute top-4 right-4 p-2 rounded-full bg-red-50 text-red-500"
                    >
                      <Trash2 size={16} />
                    </button>
@@ -435,9 +434,9 @@ ${clueContext}
                         setStep(session.isFinished ? 'ending' : 'playing');
                      }}
                    >
-                     <h3 className="font-bold text-lg text-slate-800 dark:text-slate-100 mb-1">{session.name}</h3>
-                     <div className="text-xs text-slate-400 dark:text-slate-500 mb-3">{new Date(session.updatedAt).toLocaleString()}</div>
-                     <div className="flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+                     <h3 className="font-bold text-lg text-[#2c2420]mb-1">{session.name}</h3>
+                     <div className="text-xs text-stone-400 mb-3">{new Date(session.updatedAt).toLocaleString()}</div>
+                     <div className="flex items-center gap-2 text-xs text-stone-400">
                         <Users size={12} /> {session.characterIds?.map(id => characters[id]?.name || '未知').join('、')}
                      </div>
                    </div>
@@ -448,16 +447,16 @@ ${clueContext}
         </div>
         {showBgPicker && (
           <div className="absolute inset-0 z-[60] bg-black/40 flex items-center justify-center p-6" onClick={() => setShowBgPicker(false)}>
-            <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-2xl rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-              <div className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-4">选择背景图</div>
+            <div className="bg-white/80 backdrop-blur-2xl rounded-2xl p-5 w-full max-w-sm border border-white/60" onClick={e => e.stopPropagation()}>
+              <div className="text-sm font-semibold text-[#2c2420]mb-4">选择背景图</div>
               <div className="grid grid-cols-3 gap-2 mb-4">
                 {BG_PRESETS.map((url, i) => (
-                  <button key={i} onClick={() => setBg(url)} className="w-full aspect-[3/2] rounded-xl overflow-hidden border border-slate-200/50 dark:border-white/10 hover:opacity-80 transition-opacity">
+                  <button key={i} onClick={() => setBg(url)} className="w-full aspect-[3/2] rounded-xl overflow-hidden border border-stone-200/50 hover:opacity-80 transition-opacity">
                     <img src={url} alt="" className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
-              <button onClick={() => fileInputRef.current?.click()} className="w-full py-3 rounded-xl border border-slate-200/50 dark:border-white/10 text-slate-600 dark:text-slate-400 text-sm font-medium">
+              <button onClick={() => fileInputRef.current?.click()} className="w-full py-3 rounded-xl border border-stone-200/50 text-stone-600 text-sm font-medium">
                 从相册导入
               </button>
               {bgUrl && (
@@ -523,17 +522,17 @@ ${clueContext}
   if (step === 'setup') {
     return (
       <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
-        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
         <div className="relative z-10 flex flex-col h-full">
-          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
-            <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">创建剧本</h1>
+          <div className="bg-white/40 backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-stone-200/50">
+            <button onClick={() => setStep('list')} className="text-stone-500"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-[#2c2420]">创建剧本</h1>
             <div className="w-8"></div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             <section>
-              <h2 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">邀请角色 (至少2位)</h2>
+              <h2 className="text-sm font-bold text-stone-500 mb-3">邀请角色 (至少2位)</h2>
               <div className="flex gap-3 overflow-x-auto pb-2">
                 {Object.values(characters).filter(c=>(c as any).isDisabled !== true).map(char => (
                   <div
@@ -541,27 +540,27 @@ ${clueContext}
                     onClick={() => toggleCharSelection(char.id)}
                     className={`shrink-0 w-20 flex flex-col items-center gap-2 cursor-pointer transition-all ${selectedCharIds.includes(char.id) ? 'opacity-100' : 'opacity-40 grayscale'}`}
                   >
-                    <div className={`w-14 h-14 rounded-full overflow-hidden border-2 ${selectedCharIds.includes(char.id) ? 'border-slate-500 dark:border-slate-300 shadow-lg' : 'border-transparent'}`} style={{ background: char.background }}>
+                    <div className={`w-14 h-14 rounded-full overflow-hidden border-2 ${selectedCharIds.includes(char.id) ? 'border-[#8a7a6a] shadow-lg' : 'border-transparent'}`} style={{ background: char.background }}>
                       {char.avatar && !char.avatar.startsWith('#') && <img src={char.avatar} alt="" className="w-full h-full object-cover" />}
                     </div>
-                    <span className="text-[10px] text-center line-clamp-1 text-slate-700 dark:text-slate-300">{char.name}</span>
+                    <span className="text-[10px] text-center line-clamp-1 text-stone-700">{char.name}</span>
                   </div>
                 ))}
               </div>
             </section>
 
             <section>
-              <h2 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">选择背景</h2>
+              <h2 className="text-sm font-bold text-stone-500 mb-3">选择背景</h2>
               <div className="flex gap-2 mb-3">
-                <button onClick={() => setBgMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'preset' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>预设</button>
-                <button onClick={() => setBgMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'custom' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>自定义</button>
+                <button onClick={() => setBgMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'preset' ? 'bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-sm' : `${INS_CARD} text-stone-600 border-stone-200/50`}`}>预设</button>
+                <button onClick={() => setBgMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${bgMode === 'custom' ? 'bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-sm' : `${INS_CARD} text-stone-600 border-stone-200/50`}`}>自定义</button>
               </div>
               {bgMode === 'preset' ? (
                 <div className="flex flex-wrap gap-2">
                   {BACKGROUNDS.map(bg => (
                     <button
                       key={bg} onClick={() => setSelectedBg(bg)}
-                      className={`px-4 py-2 rounded-full text-sm border ${selectedBg === bg ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300`}`}
+                      className={`px-4 py-2 rounded-full text-sm border ${selectedBg === bg ? 'bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-sm' : `${INS_CARD} text-stone-600`}`}
                     >
                       {bg}
                     </button>
@@ -571,23 +570,23 @@ ${clueContext}
                 <input
                   type="text" value={customBg} onChange={e => setCustomBg(e.target.value)}
                   placeholder="输入自定义背景..."
-                  className={`w-full border border-slate-200/50 dark:border-white/10 rounded-xl p-4 text-sm outline-none ${INS_CARD} text-slate-800 dark:text-slate-100`}
+                  className={`w-full border border-stone-200/50 rounded-xl p-4 text-sm outline-none ${INS_CARD} t`}
                 />
               )}
             </section>
 
             <section>
-              <h2 className="text-sm font-bold text-slate-500 dark:text-slate-400 mb-3">选择主题</h2>
+              <h2 className="text-sm font-bold text-stone-500 mb-3">选择主题</h2>
               <div className="flex gap-2 mb-3">
-                <button onClick={() => setThemeMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'preset' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>预设</button>
-                <button onClick={() => setThemeMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'custom' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300 border-slate-200/50 dark:border-white/10`}`}>自定义</button>
+                <button onClick={() => setThemeMode('preset')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'preset' ? 'bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-sm' : `${INS_CARD} text-stone-600 border-stone-200/50`}`}>预设</button>
+                <button onClick={() => setThemeMode('custom')} className={`flex-1 py-2 text-sm rounded-xl border ${themeMode === 'custom' ? 'bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-sm' : `${INS_CARD} text-stone-600 border-stone-200/50`}`}>自定义</button>
               </div>
               {themeMode === 'preset' ? (
                 <div className="flex flex-wrap gap-2">
                   {THEMES.map(themeItem => (
                     <button
                       key={themeItem} onClick={() => setSelectedTheme(themeItem)}
-                      className={`px-4 py-2 rounded-full text-sm border ${selectedTheme === themeItem ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 border-transparent' : `${INS_CARD} text-slate-600 dark:text-slate-300`}`}
+                      className={`px-4 py-2 rounded-full text-sm border ${selectedTheme === themeItem ? 'bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-sm' : `${INS_CARD} text-stone-600`}`}
                     >
                       {themeItem}
                     </button>
@@ -597,17 +596,17 @@ ${clueContext}
                 <input
                   type="text" value={customTheme} onChange={e => setCustomTheme(e.target.value)}
                   placeholder="输入自定义主题..."
-                  className={`w-full border border-slate-200/50 dark:border-white/10 rounded-xl p-4 text-sm outline-none ${INS_CARD} text-slate-800 dark:text-slate-100`}
+                  className={`w-full border border-stone-200/50 rounded-xl p-4 text-sm outline-none ${INS_CARD} t`}
                 />
               )}
             </section>
           </div>
 
-          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-5 py-4 border-t border-slate-200/50 dark:border-white/10">
+          <div className="bg-white/40 backdrop-blur-xl px-5 py-4 border-t border-stone-200/50">
             <button
               onClick={startGame}
               disabled={selectedCharIds.length < 2 || (bgMode === 'custom' && !customBg) || (themeMode === 'custom' && !customTheme)}
-              className="w-full py-4 rounded-2xl font-bold bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+              className="w-full py-4 rounded-2xl font-bold bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
             >
               生成剧本并开始
             </button>
@@ -621,11 +620,11 @@ ${clueContext}
   if (step === 'generating') {
     return (
       <div className={`h-full flex flex-col items-center justify-center ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
-        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
         <div className="relative z-10 flex flex-col items-center">
-          <ScrollText size={80} className="mb-6 text-slate-300 dark:text-slate-600 animate-pulse" />
-          <div className="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2">正在生成剧本</div>
-          <div className="text-sm text-slate-400 dark:text-slate-500">这可能需要几十秒的时间</div>
+          <ScrollText size={80} className="mb-6 text-stone-300 animate-pulse" />
+          <div className="text-xl font-bold text-[#2c2420]mb-2">正在生成剧本</div>
+          <div className="text-sm text-stone-400">这可能需要几十秒的时间</div>
         </div>
       </div>
     );
@@ -635,22 +634,22 @@ ${clueContext}
   if (step === 'reading') {
     return (
       <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
-        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
         <div className="relative z-10 flex flex-col h-full">
-          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
-            <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">你的剧本</h1>
+          <div className="bg-white/40 backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-stone-200/50">
+            <button onClick={() => setStep('list')} className="text-stone-500"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-[#2c2420]">你的剧本</h1>
             <div className="w-8"></div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">
-            <div className={`whitespace-pre-wrap leading-loose text-slate-800 dark:text-slate-100`}>{script}</div>
+            <div className={`whitespace-pre-wrap leading-loose t`}>{script}</div>
           </div>
 
-          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-5 py-4 border-t border-slate-200/50 dark:border-white/10">
+          <div className="bg-white/40 backdrop-blur-xl px-5 py-4 border-t border-stone-200/50">
             <button
               onClick={() => setStep('playing')}
-              className="w-full py-4 rounded-2xl font-bold bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 hover:bg-white/90 dark:hover:bg-white/20 transition-colors"
+              className="w-full py-4 rounded-2xl font-bold bg-white/50 backdrop-blur-xl border border-white/30 text-[#2c2420] hover:bg-white/20 transition-colors"
             >
               阅读完毕，进入游戏
             </button>
@@ -665,27 +664,27 @@ ${clueContext}
     const unlocked = caseData?.endings?.filter(ending => (useAppStore.getState().jubenshaSessions[currentSessionId || '']?.unlockedEndingIds || []).includes(ending.id)) || [];
     return (
       <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
-        {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+        <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
         <div className="relative z-10 flex flex-col h-full">
-          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
-            <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100">结局</h1>
+          <div className="bg-white/40 backdrop-blur-xl px-4 pt-12 pb-4 flex items-center justify-between border-b border-stone-200/50">
+            <button onClick={() => setStep('list')} className="text-stone-500"><ChevronLeft size={28} /></button>
+            <h1 className="text-lg font-bold text-[#2c2420]">结局</h1>
             <div className="w-8"></div>
           </div>
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <div className="whitespace-pre-wrap leading-relaxed text-slate-800 dark:text-slate-100">{endingText}</div>
+            <div className="whitespace-pre-wrap leading-relaxed text-[#2c2420]">{endingText}</div>
             {unlocked.length > 0 && (
-              <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
-                <div className="font-bold mb-3 text-slate-800 dark:text-slate-100">已解锁结局</div>
+              <div className="bg-white/50 backdrop-blur-xl border border-white/30 rounded-2xl p-4">
+                <div className="font-bold mb-3 text-[#2c2420]">已解锁结局</div>
                 <div className="space-y-2">
-                  {unlocked.map(ending => <div key={ending.id} className="text-slate-500 dark:text-slate-400">{ending.title}：{ending.summary}</div>)}
+                  {unlocked.map(ending => <div key={ending.id} className="text-stone-500">{ending.title}：{ending.summary}</div>)}
                 </div>
               </div>
             )}
           </div>
-          <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-5 py-4 grid grid-cols-2 gap-3 border-t border-slate-200/50 dark:border-white/10">
-            <button onClick={() => setStep('setup')} className="py-3 rounded-2xl bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 font-medium">再来一次</button>
-            <button onClick={() => setStep('list')} className="py-3 rounded-2xl bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 font-bold">返回首页</button>
+          <div className="bg-white/40 backdrop-blur-xl px-5 py-4 grid grid-cols-2 gap-3 border-t border-stone-200/50">
+            <button onClick={() => setStep('setup')} className="py-3 rounded-2xl bg-white/50 backdrop-blur-xl border border-white/30 text-[#2c2420]font-medium">再来一次</button>
+            <button onClick={() => setStep('list')} className="py-3 rounded-2xl bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-lg font-bold">返回首页</button>
           </div>
         </div>
       </div>
@@ -695,42 +694,42 @@ ${clueContext}
   // ─── PLAYING SCREEN ───
   return (
     <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`} style={bgStyle}>
-      {bgUrl && <div className="absolute inset-0 bg-white/80 dark:bg-black/60 backdrop-blur-sm" />}
+      <div className="absolute inset-0 bg-white/40 backdrop-blur-sm" />
       <div className="relative z-10 flex flex-col h-full">
-        <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 pt-12 pb-3 flex items-center justify-between border-b border-slate-200/50 dark:border-white/10">
-          <button onClick={() => setStep('list')} className="text-slate-500 dark:text-slate-400"><ChevronLeft size={28} /></button>
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        <div className="bg-white/40 backdrop-blur-xl px-4 pt-12 pb-3 flex items-center justify-between border-b border-stone-200/50">
+          <button onClick={() => setStep('list')} className="text-stone-500"><ChevronLeft size={28} /></button>
+          <div className="text-xs font-medium text-stone-500">
             {phase === 'intro' ? '破冰介绍' : phase === 'investigation1' ? '第一轮搜证' : phase === 'discussion' ? '集中讨论' : phase === 'investigation2' ? '第二轮搜证' : '最终指认'}
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setShowScriptModal(true)} className="p-2 rounded-xl bg-white/70 dark:bg-white/10">
-              <BookOpen size={18} className="text-slate-500 dark:text-slate-400" />
+            <button onClick={() => setShowScriptModal(true)} className="p-2 rounded-xl bg-white/40">
+              <BookOpen size={18} className="text-stone-500" />
             </button>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {caseData && (
-            <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">我的角色卡</div>
+            <div className="bg-white/50 backdrop-blur-xl border border-white/30 rounded-2xl p-4">
+              <div className="text-xs font-semibold text-stone-500 mb-2">我的角色卡</div>
               <div className="space-y-1">
-                <div><span className="font-semibold text-slate-800 dark:text-slate-100">角色名：</span><span className="text-slate-500 dark:text-slate-400">{caseData.roles.find(role => role.playerId === 'user')?.roleName}</span></div>
-                <div><span className="font-semibold text-slate-800 dark:text-slate-100">公开身份：</span><span className="text-slate-500 dark:text-slate-400">{caseData.roles.find(role => role.playerId === 'user')?.publicIdentity}</span></div>
+                <div><span className="font-semibold text-[#2c2420]">角色名：</span><span className="text-stone-500">{caseData.roles.find(role => role.playerId === 'user')?.roleName}</span></div>
+                <div><span className="font-semibold text-[#2c2420]">公开身份：</span><span className="text-stone-500">{caseData.roles.find(role => role.playerId === 'user')?.publicIdentity}</span></div>
               </div>
             </div>
           )}
 
           {caseData && (
-            <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">在场角色</div>
+            <div className="bg-white/50 backdrop-blur-xl border border-white/30 rounded-2xl p-4">
+              <div className="text-xs font-semibold text-stone-500 mb-2">在场角色</div>
               <div className="space-y-2">
                 {caseData.roles.filter(role => role.playerId !== 'user').map(role => (
                   <div key={role.playerId} className="flex items-center justify-between">
                     <div>
-                      <div className="font-semibold text-slate-800 dark:text-slate-100">{characters[role.playerId]?.name}</div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">{role.publicIdentity}</div>
+                      <div className="font-semibold text-[#2c2420]">{characters[role.playerId]?.name}</div>
+                      <div className="text-xs text-stone-500">{role.publicIdentity}</div>
                     </div>
-                    <button onClick={() => handleInterrogate(role.playerId)} className="px-4 py-2 rounded-xl text-sm font-medium bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100">
+                    <button onClick={() => handleInterrogate(role.playerId)} className="px-4 py-2 rounded-xl text-sm font-medium bg-white/50 backdrop-blur-xl border border-white/30 text-[#2c2420]">
                       盘问
                     </button>
                   </div>
@@ -740,13 +739,13 @@ ${clueContext}
           )}
 
           {visibleClues.length > 0 && (
-            <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-2xl p-4">
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">已发现线索</div>
+            <div className="bg-white/50 backdrop-blur-xl border border-white/30 rounded-2xl p-4">
+              <div className="text-xs font-semibold text-stone-500 mb-2">已发现线索</div>
               <div className="space-y-2">
                 {visibleClues.map(clue => (
                   <div key={clue.id}>
-                    <div className="font-semibold text-slate-800 dark:text-slate-100">{clue.title}</div>
-                    <div className="text-sm text-slate-500 dark:text-slate-400">{clue.detail}</div>
+                    <div className="font-semibold text-[#2c2420]">{clue.title}</div>
+                    <div className="text-sm text-stone-500">{clue.detail}</div>
                   </div>
                 ))}
               </div>
@@ -755,11 +754,11 @@ ${clueContext}
 
           {messages.map((msg, i) => (
             <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-              {msg.role === 'character' && <span className="text-[10px] text-slate-500 dark:text-slate-400 mb-1 ml-1">{msg.name}</span>}
+              {msg.role === 'character' && <span className="text-[10px] text-stone-500 mb-1 ml-1">{msg.name}</span>}
               <div className={`max-w-[85%] p-3 rounded-2xl text-sm leading-relaxed ${
-                msg.role === 'user' ? 'bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 rounded-br-none' :
-                msg.role === 'system' ? 'bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl text-slate-500 dark:text-slate-400 italic text-center w-full max-w-full border border-white/30 dark:border-white/10' :
-                'bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 rounded-bl-none'
+                msg.role === 'user' ? 'bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-lg rounded-br-none' :
+                msg.role === 'system' ? 'bg-white/50 backdrop-blur-xl text-stone-500 italic text-center w-full max-w-full border border-white/30' :
+                'bg-white/50 backdrop-blur-xl border border-white/30 text-[#2c2420]rounded-bl-none'
               }`}>
                 {msg.text}
               </div>
@@ -767,7 +766,7 @@ ${clueContext}
           ))}
           {isAiTyping && (
             <div className="flex items-start">
-              <div className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl text-slate-500 dark:text-slate-400 p-3 rounded-2xl rounded-bl-none text-sm animate-pulse border border-white/30 dark:border-white/10">
+              <div className="bg-white/50 backdrop-blur-xl text-stone-500 p-3 rounded-2xl rounded-bl-none text-sm animate-pulse border border-white/30">
                 ...
               </div>
             </div>
@@ -775,15 +774,15 @@ ${clueContext}
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl px-4 py-4 space-y-3 border-t border-slate-200/50 dark:border-white/10">
-          <button onClick={advancePhase} disabled={phase === 'final_vote'} className="w-full py-2.5 rounded-xl bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-800 dark:text-slate-100 text-sm font-medium disabled:opacity-40">
+        <div className="bg-white/40 backdrop-blur-xl px-4 py-4 space-y-3 border-t border-stone-200/50">
+          <button onClick={advancePhase} disabled={phase === 'final_vote'} className="w-full py-2.5 rounded-xl bg-white/50 backdrop-blur-xl border border-white/30 text-[#2c2420]text-sm font-medium disabled:opacity-40">
             推进阶段
           </button>
           <div className="flex gap-2">
-            <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-xl p-3 text-sm text-slate-800 dark:text-slate-100 flex-1">
+            <select value={selectedLocation} onChange={e => setSelectedLocation(e.target.value)} className="bg-white/50 backdrop-blur-xl border border-white/30 rounded-xl p-3 text-sm text-[#2c2420]flex-1">
               {locations.map(location => <option key={location} value={location}>{location}</option>)}
             </select>
-            <button onClick={handleInvestigate} disabled={!(phase === 'investigation1' || phase === 'investigation2')} className="px-4 rounded-xl bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 text-slate-600 dark:text-slate-300 disabled:opacity-40">
+            <button onClick={handleInvestigate} disabled={!(phase === 'investigation1' || phase === 'investigation2')} className="px-4 rounded-xl bg-white/50 backdrop-blur-xl border border-white/30 text-stone-600 disabled:opacity-40">
               <Search size={18} />
             </button>
           </div>
@@ -791,13 +790,13 @@ ${clueContext}
             <select
               value={accusedCharacterId || ''}
               onChange={e => setAccusedCharacterId(e.target.value)}
-              className="bg-white/75 dark:bg-white/[0.07] backdrop-blur-xl border border-white/30 dark:border-white/10 rounded-xl p-3 text-sm text-slate-800 dark:text-slate-100 flex-1"
+              className="bg-white/50 backdrop-blur-xl border border-white/30 rounded-xl p-3 text-sm text-[#2c2420]flex-1"
             >
               <option value="">选择指认对象</option>
               <option value="user">我自己</option>
               {selectedCharIds.map(id => <option key={id} value={id}>{characters[id].name}</option>)}
             </select>
-            <button onClick={handleAccuse} disabled={!accusedCharacterId || isAiTyping || phase !== 'final_vote'} className="px-5 rounded-xl bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 font-bold disabled:opacity-50">
+            <button onClick={handleAccuse} disabled={!accusedCharacterId || isAiTyping || phase !== 'final_vote'} className="px-5 rounded-xl bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-lg font-bold disabled:opacity-50">
               <Flag size={18} />
             </button>
           </div>
@@ -806,13 +805,13 @@ ${clueContext}
               value={input}
               onChange={e => setInput(e.target.value)}
               placeholder="输入你的行动或对话..."
-              className="flex-1 bg-white/60 dark:bg-white/[0.05] border border-slate-200/50 dark:border-white/10 rounded-2xl p-3 text-sm text-slate-800 dark:text-slate-100 outline-none resize-none"
+              className="flex-1 bg-white/60 border border-stone-200/50 rounded-2xl p-3 text-sm text-[#2c2420]outline-none resize-none"
               rows={1}
             />
             <button
               onClick={() => handleSend(input)}
               disabled={!input.trim() || isAiTyping}
-              className="w-12 h-12 rounded-2xl bg-slate-800/90 dark:bg-white/90 text-white dark:text-slate-800 flex items-center justify-center disabled:opacity-50"
+              className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-xl border border-white/30 text-white shadow-lg flex items-center justify-center disabled:opacity-50"
             >
               <Send size={20} />
             </button>
@@ -821,12 +820,12 @@ ${clueContext}
 
         {showScriptModal && (
           <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowScriptModal(false)}>
-            <div className={`${INS_BG} border border-white/30 dark:border-white/10 rounded-2xl w-full max-h-[80%] flex flex-col`} onClick={e => e.stopPropagation()}>
-              <div className="bg-white/70 dark:bg-white/[0.08] backdrop-blur-xl p-4 border-b border-slate-200/50 dark:border-white/10 flex justify-between items-center rounded-t-2xl">
-                <h3 className="font-bold text-slate-800 dark:text-slate-100">你的剧本</h3>
-                <button onClick={() => setShowScriptModal(false)} className="text-slate-500 dark:text-slate-400">关闭</button>
+            <div className={`${INS_BG} border border-white/30 rounded-2xl w-full max-h-[80%] flex flex-col`} onClick={e => e.stopPropagation()}>
+              <div className="bg-white/40 backdrop-blur-xl p-4 border-b border-stone-200/50 flex justify-between items-center rounded-t-2xl">
+                <h3 className="font-bold text-[#2c2420]">你的剧本</h3>
+                <button onClick={() => setShowScriptModal(false)} className="text-stone-500">关闭</button>
               </div>
-              <div className="p-4 overflow-y-auto whitespace-pre-wrap text-slate-800 dark:text-slate-100">
+              <div className="p-4 overflow-y-auto whitespace-pre-wrap text-[#2c2420]">
                 {script}
               </div>
             </div>

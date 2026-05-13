@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/netease.js": {
+      "memory": 256,
+      "maxDuration": 10
+    }
+  }
+}

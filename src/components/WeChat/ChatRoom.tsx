@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, MoreHorizontal, Plus, Image as ImageIcon, Play, Smile, Volume2, Send } from 'lucide-react';
 import { generateAIResponse, getCharacterReply, textToSpeech, speechToText, translateText } from '../../lib/ai';
@@ -157,8 +157,6 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const [isTyping, setIsTyping] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showCharacterMoments, setShowCharacterMoments] = useState(false);
-  const [pendingUserMessages, setPendingUserMessages] = useState(0);
-  const [pendingUserMsgTimestamps, setPendingUserMsgTimestamps] = useState<number[]>([]);
   
   const [showAttach, setShowAttach] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
@@ -194,6 +192,40 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const recordingStartTimeRef = useRef(0);
   const [showTopMenu, setShowTopMenu] = useState(false);
+  const [playingAudioUrl, setPlayingAudioUrl] = useState<string | null>(null);
+  const playingAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Generate deterministic voice bar heights based on message id and duration
+  const getVoiceBarHeights = useCallback((msgId: string, durationSecs: number) => {
+    const scale = Math.min(1, durationSecs / 60);
+    const heights: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const seed = ((msgId.charCodeAt(i % msgId.length) || i * 7) * (i + 1) * 3 + i * 11) % 12;
+      heights.push(Math.round(4 + seed * scale));
+    }
+    return heights;
+  }, []);
+
+  // Parse audio duration label (e.g. "0:30") to seconds
+  const parseDurationSecs = useCallback((label: string) => {
+    const parts = label.split(':');
+    if (parts.length === 2) return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+    return 10;
+  }, []);
+
+  const playVoiceMessage = useCallback((audioUrl: string) => {
+    // Stop any currently playing voice
+    if (playingAudioRef.current) {
+      playingAudioRef.current.pause();
+      playingAudioRef.current = null;
+    }
+    setPlayingAudioUrl(audioUrl);
+    const audio = new Audio(audioUrl);
+    audio.onended = () => { setPlayingAudioUrl(null); playingAudioRef.current = null; };
+    audio.onerror = () => { setPlayingAudioUrl(null); playingAudioRef.current = null; };
+    playingAudioRef.current = audio;
+    void audio.play().catch(() => { setPlayingAudioUrl(null); playingAudioRef.current = null; });
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -202,6 +234,8 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const pendingStopRef = useRef(false);
+  const initialScrollDoneRef = useRef(false);
+  const pendingRepliesRef = useRef(0);
   const isDark = settings.wechatTheme === 'dark';
   const t = getT(settings.osTheme || 'green');
 
@@ -236,15 +270,12 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
       
       const history = state.chats[characterId] || [];
       const lastUserMessage = [...history].reverse().find(m => m.senderId === 'user');
-      const pendingTimestamps = pendingUserMsgTimestamps;
-      const lastPendingTs = pendingTimestamps.length > 0 ? Math.max(...pendingTimestamps) : 0;
-      const minCharTimestamp = lastUserMessage ? Math.max(lastUserMessage.timestamp, lastPendingTs) + 1 : undefined;
-      
+
       if (lastUserMessage) {
         const prompt = `刚刚我们在聊天，你发了最后一条消息后我没有回复。请你以${currentChar.name}的身份主动给我发消息，询问我在忙什么，或者关心我一下，或者继续刚才的话题。语气要自然，像真人一样，不要太刻意。`;
         const reply = (await getCharacterReply(characterId, prompt)).trim();
         if (reply) {
-          receiveMessage(characterId, reply, minCharTimestamp);
+          receiveMessage(characterId, reply);
           updateCharacter(characterId, { followUpSent: true });
         }
       }
@@ -255,14 +286,21 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
     }
   };
 
-  useLayoutEffect(() => {
-    if (!messageListRef.current) return;
-    messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
-  }, [characterId]);
-
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: messages.length <= 1 ? 'auto' : 'smooth' });
+    // 进入聊天时直接跳到底部，不播放滚动动画
+    if (!initialScrollDoneRef.current) {
+      initialScrollDoneRef.current = true;
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    } else {
+      // 新消息到达时平滑滚动
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, isTyping]);
+
+  // 切换角色时重置初始滚动标记
+  useEffect(() => {
+    initialScrollDoneRef.current = false;
+  }, [characterId]);
 
   // 监听用户消息，设置跟进定时器
   useEffect(() => {
@@ -474,16 +512,15 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const handleSend = async (textOverride?: string, imgUrl?: string, stickerUrl?: string) => {
     const textToSend = textOverride !== undefined ? textOverride : inputText;
     if (!textToSend.trim() && !imgUrl && !stickerUrl) return;
-    
+
     setInputText('');
     setShowAttach(false);
     setAttachType(null);
-    
+
     const userTimestamp = Date.now();
-    setPendingUserMsgTimestamps(prev => [...prev, userTimestamp]);
-    
     sendMessage(characterId, textToSend, imgUrl, stickerUrl, userTimestamp);
-    
+
+    pendingRepliesRef.current++;
     setIsTyping(true);
     try {
       let promptText = textToSend;
@@ -506,10 +543,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
         giftPart = `[礼物] ${await generateCharacterGiftName(character, textToSend)}`;
       }
       const finalParts = giftPart ? [...parts, giftPart] : parts;
-      
-      const currentPendingTimestamps = [...pendingUserMsgTimestamps];
-      const minCharTimestamp = currentPendingTimestamps.length > 0 ? Math.max(...currentPendingTimestamps) : undefined;
-      
+
       for (let i = 0; i < finalParts.length; i++) {
         const part = finalParts[i].trim();
         if (part.startsWith('[礼物]') && !part.includes('已添加')) {
@@ -520,16 +554,15 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
              timestamp: Date.now()
            });
         }
-        
-        receiveMessage(characterId, part, minCharTimestamp);
-        
+
+        // 角色每段消息使用真实到达时间戳，确保用户消息能自然插入到分段之间
+        receiveMessage(characterId, part);
+
         if (i < finalParts.length - 1) {
           setIsTyping(true);
           await new Promise(r => setTimeout(r, 1500));
         }
       }
-      
-      setPendingUserMsgTimestamps([]);
 
       // 如果角色启用了语音回复，为每条回复生成英文语音 + 中文翻译
       if (character?.voiceReplyEnabled && !textOverride) {
@@ -549,8 +582,10 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
     } catch (error: any) {
       receiveMessage(characterId, `[系统提示: ${error.message}]`);
     } finally {
-      setIsTyping(false);
-      setPendingUserMsgTimestamps([]);
+      pendingRepliesRef.current--;
+      if (pendingRepliesRef.current === 0) {
+        setIsTyping(false);
+      }
     }
   };
 
@@ -594,10 +629,20 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   }
 
   return (
-    <div 
+    <div
       className="h-full flex flex-col dark:bg-black dark:text-gray-100 absolute inset-0 z-50"
       style={{ background: character.background.startsWith('#') && character.background !== '#ffffff' && character.background !== '#f3f4f6' ? character.background : undefined, backgroundImage: !character.background.startsWith('#') ? `url(${character.background})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}
     >
+      <style>{`
+        @keyframes voiceWave {
+          0%, 100% { transform: scaleY(0.5); }
+          50% { transform: scaleY(1.5); }
+        }
+        .animate-voice-wave {
+          animation: voiceWave 0.7s ease-in-out infinite;
+          transform-origin: center;
+        }
+      `}</style>
       <div className="bg-gray-100/90 dark:bg-black/90 backdrop-blur px-4 pt-14 pb-3 flex items-center justify-between border-b dark:border-white/5 shrink-0 z-10">
         <button onClick={onBack} className="p-1 -ml-1 text-gray-800 dark:text-gray-100"><ChevronLeft size={24} /></button>
         <h1 className="text-lg font-medium dark:text-gray-100">{character.remark || character.name}</h1>
@@ -763,56 +808,52 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
                       }}
                       onClick={() => {
                         if (msg.audioUrl) {
-                          const audio = new Audio(msg.audioUrl);
-                          void audio.play().catch(() => {});
+                          playVoiceMessage(msg.audioUrl);
                         }
                       }}
-                      className={`min-w-[132px] max-w-[220px] rounded-[18px] px-4 py-3 flex items-center gap-3 text-left cursor-pointer active:scale-[0.98] transition-transform select-none ${
+                      className={`rounded-[18px] px-4 py-3 flex items-center gap-3 text-left cursor-pointer active:scale-[0.98] transition-transform select-none ${
                         isUser ? (isDark ? 'bg-[#3a3a3a] text-white' : 'bg-[#e5e7eb] text-slate-800') : 'bg-white dark:bg-[#2b2b2b] text-slate-800 dark:text-white'
                       }`}
+                      style={{ width: `${Math.max(120, Math.min(240, 100 + parseDurationSecs(msg.audioLabel || '0:30') * 2.5))}px` }}
                     >
                       {isUser ? (
                         <>
                           <div className={`text-[11px] font-medium ${isUser ? 'text-slate-600 dark:text-white/80' : 'text-slate-500 dark:text-white/60'}`}>
                             {msg.audioLabel || '1:00'}
                           </div>
-                          <div className="flex-1 flex items-center gap-1 justify-end">
-                            {[...Array(8)].map((_, i) => (
+                          <div className="flex-1 flex items-center gap-[3px] justify-end">
+                            {getVoiceBarHeights(msg.id, parseDurationSecs(msg.audioLabel || '0:30')).map((h, i) => (
                               <div
                                 key={i}
-                                className={`w-1 rounded-full transition-all duration-150 ${
-                                  isUser ? 'bg-slate-700 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500'
-                                }`}
+                                className={`w-[3px] rounded-full ${
+                                  playingAudioUrl === msg.audioUrl ? 'animate-voice-wave' : ''
+                                } ${isUser ? 'bg-slate-700 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500'}`}
                                 style={{
-                                  height: `${4 + Math.random() * 12}px`,
-                                  animationDelay: `${i * 0.1}s`,
+                                  height: `${h}px`,
+                                  animationDelay: playingAudioUrl === msg.audioUrl ? `${i * 0.08}s` : undefined,
                                 }}
                               />
                             ))}
                           </div>
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                            isUser ? 'bg-slate-200 dark:bg-slate-700' : 'bg-slate-100 dark:bg-white/10'
-                          }`}>
-                            <Volume2 size={15} className="text-slate-700 dark:text-white" />
+                          <div className="shrink-0">
+                            <Volume2 size={14} className="text-slate-500 dark:text-white/60" />
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                            isUser ? 'bg-slate-200 dark:bg-slate-700' : 'bg-slate-100 dark:bg-white/10'
-                          }`}>
-                            <Volume2 size={15} className="text-slate-700 dark:text-white" />
+                          <div className="shrink-0">
+                            <Volume2 size={14} className="text-slate-500 dark:text-white/60" />
                           </div>
-                          <div className="flex-1 flex items-center gap-1">
-                            {[...Array(8)].map((_, i) => (
+                          <div className="flex-1 flex items-center gap-[3px]">
+                            {getVoiceBarHeights(msg.id, parseDurationSecs(msg.audioLabel || '0:30')).map((h, i) => (
                               <div
                                 key={i}
-                                className={`w-1 rounded-full transition-all duration-150 ${
-                                  isUser ? 'bg-slate-700 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500'
-                                }`}
+                                className={`w-[3px] rounded-full ${
+                                  playingAudioUrl === msg.audioUrl ? 'animate-voice-wave' : ''
+                                } ${isUser ? 'bg-slate-700 dark:bg-white' : 'bg-gray-400 dark:bg-gray-500'}`}
                                 style={{
-                                  height: `${4 + Math.random() * 12}px`,
-                                  animationDelay: `${i * 0.1}s`,
+                                  height: `${h}px`,
+                                  animationDelay: playingAudioUrl === msg.audioUrl ? `${i * 0.08}s` : undefined,
                                 }}
                               />
                             ))}
@@ -913,7 +954,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
           />
           <button 
             onClick={() => handleSend()}
-            disabled={!inputText.trim() || isTyping}
+            disabled={!inputText.trim()}
             className="bg-slate-700 text-white w-10 h-10 rounded-lg flex items-center justify-center disabled:opacity-50 shrink-0"
           >
             <Send size={20} />

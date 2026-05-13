@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { ChevronLeft, Trash2, X, Upload, Star, Camera, Mic } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { ChevronLeft, Trash2, X, Upload, Star, Camera, Mic, Brain, Heart, AlertCircle } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { updateWorldCharacterCard } from '../../lib/ai';
+import { scoreMemory } from '../../lib/characterMemory';
 import ImageUploader from '../ImageUploader';
 
 const ConfirmModal = ({ 
@@ -66,6 +66,12 @@ export default function CharacterSettings({
   const updateCharacter = useAppStore(s => s.updateCharacter);
   const deleteChat = useAppStore(s => s.deleteChat);
   const removeCharacter = useAppStore(s => s.removeCharacter);
+  const characterMemoryBank = useAppStore(s => s.characterMemoryBank[characterId] || []);
+  const addCharacterMemory = useAppStore(s => s.addCharacterMemory);
+  const deleteCharacterMemory = useAppStore(s => s.deleteCharacterMemory);
+  const [showMemoryManager, setShowMemoryManager] = useState(false);
+  const [newMemoryText, setNewMemoryText] = useState('');
+  const [memoryFilter, setMemoryFilter] = useState<string>('all');
 
   const [localChar, setLocalChar] = useState(character);
   const [showClearModal, setShowClearModal] = useState(false);
@@ -81,11 +87,6 @@ export default function CharacterSettings({
 
   const handleClearChat = () => {
     deleteChat(characterId);
-    updateWorldCharacterCard(characterId, {
-      memorySummary: '',
-      memoryUpdatedAt: undefined,
-      memoryDigestMessageCount: 0,
-    });
     onBack();
   };
 
@@ -101,8 +102,132 @@ export default function CharacterSettings({
 
   const isDark = settings.wechatTheme === 'dark';
 
+  const scoredMemories = useMemo(() =>
+    characterMemoryBank.map(m => ({ entry: m, score: scoreMemory(m) })).sort((a, b) => b.score - a.score),
+  [characterMemoryBank]);
+
+  const filteredMemories = useMemo(() => {
+    if (memoryFilter === 'all') return scoredMemories;
+    return scoredMemories.filter(({ entry }) => entry.type === memoryFilter);
+  }, [scoredMemories, memoryFilter]);
+
   return (
     <div className={`h-full flex flex-col ${isDark ? 'bg-black' : 'bg-gray-100'}`}>
+      {showMemoryManager && (
+        <div className="absolute inset-0 z-50 flex flex-col bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#1a1a1a] px-4 pt-12 pb-4 flex items-center justify-between border-b border-gray-200 dark:border-white/10 shrink-0">
+            <button onClick={() => { setShowMemoryManager(false); setNewMemoryText(''); }} className="text-gray-500 p-1">
+              <ChevronLeft size={24} />
+            </button>
+            <h1 className="text-lg font-bold text-gray-800 dark:text-white">记忆库</h1>
+            <div className="w-8" />
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {/* Add memory */}
+            <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 space-y-2">
+              <textarea
+                value={newMemoryText}
+                onChange={e => setNewMemoryText(e.target.value)}
+                placeholder="添加一条新记忆...（如：用户喜欢吃辣）"
+                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-200 outline-none resize-none"
+                rows={2}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    if (!newMemoryText.trim()) return;
+                    addCharacterMemory(characterId, {
+                      type: 'fact',
+                      content: newMemoryText.trim(),
+                      summary: newMemoryText.trim().slice(0, 80),
+                      tags: [],
+                      valence: 0.5,
+                      arousal: 0.5,
+                      importance: 5,
+                    });
+                    setNewMemoryText('');
+                  }}
+                  disabled={!newMemoryText.trim()}
+                  className="flex-1 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium disabled:opacity-40"
+                >
+                  添加记忆
+                </button>
+              </div>
+            </div>
+
+            {/* Filter tabs */}
+            <div className="flex gap-2 text-xs">
+              {['all', 'fact', 'observation', 'conversation', 'event', 'preference'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setMemoryFilter(t)}
+                  className={`px-3 py-1.5 rounded-full transition-colors ${
+                    memoryFilter === t
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
+                  }`}
+                >
+                  {t === 'all' ? '全部' : t === 'fact' ? '事实' : t === 'observation' ? '观察' : t === 'conversation' ? '对话' : t === 'event' ? '事件' : '偏好'}
+                </button>
+              ))}
+            </div>
+
+            {/* Memory list */}
+            {filteredMemories.length === 0 ? (
+              <div className="text-center py-16">
+                <Brain size={48} className="mx-auto mb-3 text-gray-300" />
+                <p className="text-sm text-gray-400">暂无记忆</p>
+                <p className="text-xs text-gray-300 mt-1">角色会自动记录与你的互动</p>
+              </div>
+            ) : (
+              filteredMemories.map(({ entry, score }) => (
+                <div key={entry.id} className="bg-white dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-gray-700 dark:text-gray-200">{entry.summary}</div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                          entry.type === 'fact' ? 'bg-blue-100 text-blue-600' :
+                          entry.type === 'observation' ? 'bg-green-100 text-green-600' :
+                          entry.type === 'event' ? 'bg-orange-100 text-orange-600' :
+                          entry.type === 'preference' ? 'bg-pink-100 text-pink-600' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>{entry.type === 'fact' ? '事实' : entry.type === 'observation' ? '观察' : entry.type === 'event' ? '事件' : entry.type === 'preference' ? '偏好' : '对话'}</span>
+                        <span className="text-[10px] text-gray-400">重要性 {entry.importance}</span>
+                        <span className="text-[10px] text-gray-400">得分 {score.toFixed(1)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        {/* Valence bar */}
+                        <div className="flex items-center gap-1">
+                          <Heart size={10} className={entry.valence > 0.6 ? 'text-red-400' : entry.valence < 0.4 ? 'text-gray-400' : 'text-gray-300'} />
+                          <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{
+                              width: `${entry.valence * 100}%`,
+                              backgroundColor: entry.valence > 0.6 ? '#f87171' : entry.valence < 0.4 ? '#9ca3af' : '#d1d5db'
+                            }} />
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(entry.createdAt).toLocaleDateString()}
+                        </span>
+                        <span className="text-[10px] text-gray-300">{entry.accessCount}次访问</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => deleteCharacterMemory(characterId, entry.id)}
+                      className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-red-500 transition-colors shrink-0"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
       <ConfirmModal
         isOpen={showClearModal}
         onClose={() => setShowClearModal(false)}
@@ -338,6 +463,17 @@ export default function CharacterSettings({
         </div>
 
         <div className={`rounded-2xl p-4 shadow-sm space-y-3 ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
+          <button
+            onClick={() => setShowMemoryManager(true)}
+            className={`w-full p-4 rounded-xl flex items-center gap-3 transition-colors ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}
+          >
+            <Brain size={18} className="text-purple-500" />
+            <div className="text-left">
+              <div className={`text-sm font-medium ${isDark ? 'text-gray-200' : 'text-slate-700'}`}>角色记忆库 ({characterMemoryBank.length})</div>
+              <div className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>管理 {character?.name} 对你的记忆</div>
+            </div>
+          </button>
+
           <button
             onClick={() => setShowDeleteModal(true)}
             className={`w-full p-4 rounded-xl flex items-center gap-3 transition-colors ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}

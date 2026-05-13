@@ -323,36 +323,9 @@ export default function WorldBookApp() {
               placeholder="例如: 轻松、幽默、互相调侃"
             />
           </div>
-          <div>
-            <label className="block text-sm font-bold mb-1">记忆最近对话轮数</label>
-            <input
-              type="number"
-              min="2"
-              max="20"
-              value={editingChar.memoryRounds || 8}
-              onChange={e => setEditingChar({...editingChar, memoryRounds: Math.max(2, Math.min(20, parseInt(e.target.value) || 8))})}
-              className={`w-full border ${t.inputBorder} rounded p-2 bg-white/50 outline-none focus:border-amber-500`}
-            />
-            <div className="text-xs mt-1 opacity-60">数字越小越省 token，建议 6-10。</div>
-          </div>
-          <div>
-            <label className="block text-sm font-bold mb-1">长期记忆摘要</label>
-            <textarea
-              value={editingChar.memorySummary || ''}
-              onChange={e => setEditingChar({...editingChar, memorySummary: e.target.value})}
-              className={`w-full h-20 border ${t.inputBorder} rounded p-2 bg-white/50 resize-none outline-none focus:border-amber-500`}
-              placeholder="AI 会自动压缩重要历史对话。"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold mb-1">最近一周活动摘要</label>
-            <textarea
-              value={editingChar.weeklyActivitySummary || ''}
-              onChange={e => setEditingChar({...editingChar, weeklyActivitySummary: e.target.value})}
-              className={`w-full h-20 border ${t.inputBorder} rounded p-2 bg-white/50 resize-none outline-none focus:border-amber-500`}
-              placeholder="AI 会自动压缩最近一周一起做过的事。"
-            />
-          </div>
+
+
+
         </div>
       </div>
     );
@@ -412,7 +385,7 @@ export default function WorldBookApp() {
                 {char.forceRequirements && (
                   <div className="text-[11px] text-amber-700 mt-1 line-clamp-2">强制要求：{char.forceRequirements}</div>
                 )}
-                <div className="text-[11px] opacity-60 mt-1">记忆最近 {char.memoryRounds || 8} 轮</div>
+
                 <div className="absolute top-2 right-2 flex gap-1">
                   <button 
                     onClick={(e) => {
