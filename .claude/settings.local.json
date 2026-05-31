@@ -43,7 +43,28 @@
       "Bash(sudo chown -R huangjinyi:staff ~/.config)",
       "Bash(mkdir -p /tmp/zeabur-config)",
       "Bash(ZEABUR_CONFIG_DIR=/tmp/zeabur-config zeabur --help)",
-      "Bash(gh auth *)"
+      "Bash(gh auth *)",
+      "Bash(rm -rf /tmp/lav-backend)",
+      "Bash(mkdir -p /tmp/lav-backend)",
+      "Bash(cp /Users/huangjinyi/Downloads/dc-tiny-phone/server.js /tmp/lav-backend/)",
+      "Bash(cp /Users/huangjinyi/Downloads/dc-tiny-phone/package.json /tmp/lav-backend/)",
+      "Bash(cp /Users/huangjinyi/Downloads/dc-tiny-phone/package-lock.json /tmp/lav-backend/)",
+      "Bash(rm -rf node_modules/.cache)",
+      "Bash(npm ls *)",
+      "Bash(s deploy *)",
+      "Bash(open *)",
+      "Bash(pip3 install *)",
+      "Bash(nslookup fc.aliyuncs.com)",
+      "Bash(nslookup cn-hangzhou.fc.aliyuncs.com)",
+      "Bash(nslookup fc.cn-hangzhou.aliyuncs.com)",
+      "Bash(zip -r /tmp/lav-phone-api.zip server.js package.json node_modules -x \"node_modules/.package-lock.json\")",
+      "Bash(/tmp/upx login *)",
+      "Bash(/tmp/upx put *)",
+      "Bash(unzip -l /tmp/test-download.zip)",
+      "Bash(unzip *)",
+      "Bash(zip -r /Users/huangjinyi/Desktop/lav-phone-fc-v3.zip server.js package.json node_modules -x \"node_modules/.package-lock.json\")",
+      "Bash(bash)",
+      "WebFetch(domain:zeabur.com)"
     ]
   }
 }

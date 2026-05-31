@@ -1,0 +1,31 @@
+edition: 3.0.0
+name: lav-phone-backend
+access: default
+
+resources:
+  function:
+    component: fc3
+    props:
+      region: cn-hangzhou
+      functionName: lav-phone-api
+      runtime: nodejs20
+      handler: index.main_handler
+      memorySize: 256
+      timeout: 30
+      internetAccess: true
+      code: ./
+      environmentVariables:
+        GEMINI_API_KEY: ""
+      triggers:
+        - triggerName: httpTrigger
+          triggerType: http
+          qualifier: LATEST
+          triggerConfig:
+            authType: anonymous
+            disableURLInternet: false
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - HEAD

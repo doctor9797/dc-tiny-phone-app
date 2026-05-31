@@ -1,21 +1,12 @@
-// Zeabur/通用部署 — Express 服务器
-// 提供静态文件 + 网易云 API 代理 + Gemini API 代理
+// 纯 API 服务 — 提供网易云音乐代理 + Gemini AI 代理
+// 静态文件由又拍云 CDN 托管，与该服务器无关
 
 import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import CryptoJS from 'crypto-js';
 import forge from 'node-forge';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
-
-// 当被 Vite dev server 作为中间件导入时（非直接运行），跳过静态文件和服务启动
-const isMain = process.argv[1] && (
-  process.argv[1].includes('server.js') ||
-  process.argv[1].includes('/server')
-);
 
 // ── NetEase Weapi 加密 ──
 
@@ -288,39 +279,10 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// ── 静态文件（仅生产模式，Vite dev 模式下由 Vite 自己处理） ──
-
-if (isMain) {
-  // 带 hash 的静态资源（在 assets/ 里）—— 长期缓存
-  app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
-    maxAge: '30d',
-    immutable: true,
-  }));
-  // 塔罗牌图片 —— 长期缓存
-  app.use('/tarot-cards', express.static(path.join(__dirname, 'dist', 'tarot-cards'), {
-    maxAge: '30d',
-    immutable: true,
-  }));
-  // 其他静态文件（图标、音频等）—— 短期缓存
-  app.use(express.static(path.join(__dirname, 'dist'), {
-    maxAge: '1d',
-  }));
-  // 所有非 API 路由返回 index.html（SPA fallback）
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-  });
-}
-
-// 当被 Vite 作为中间件使用时，未匹配的路由继续传递
-app.use((_req, _res, next) => next());
-
-// ── 启动（仅直接运行时） ──
-
-if (isMain) {
-  const PORT = parseInt(process.env.PORT || '3000');
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
-  });
-}
+// ── 启动 ──
+const PORT = parseInt(process.env.PORT || '3000');
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
+});
 
 export default app;
