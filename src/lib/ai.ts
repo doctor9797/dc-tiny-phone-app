@@ -4,6 +4,7 @@ import { getTopMemoriesForPrompt, extractMemoryFromConversation, estimateSentime
 import { lookupEmotion } from './emotionDictionary';
 import { getCurrentMood, buildMoodPrompt } from './moodLoop';
 import { writeDecorationMoodToMemory } from './moodPool';
+import { apiUrl } from './apiBase';
 
 export function extractImageData(dataUrl: string): { mimeType: string; data: string } | null {
   try {
@@ -60,7 +61,7 @@ export async function generateAIResponse(
   // Server proxy mode: no local key -> 走服务端代理（部署环境）
   if (!apiKey && !settings.apiBaseUrl && !images?.length) {
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch(apiUrl('/api/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: modelName, prompt, systemInstruction }),

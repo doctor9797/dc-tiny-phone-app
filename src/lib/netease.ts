@@ -1,9 +1,8 @@
-// 网易云音乐服务 — 直接调用公共 API（无需本地运行）
-// 手机也能用，不需要开电脑
+// 网易云音乐服务 — 通过 Cloudflare Worker 代理调用
+// 部署后需修改 public/config.js 中的 __API_BASE__
 
 import { Song } from '../types';
-
-const API_BASE = '/api';
+import { apiUrl } from './apiBase';
 
 const DEFAULT_LYRICS = '[00:00.00] 暂无歌词\n[00:10.00] 正在播放这首歌';
 
@@ -17,7 +16,7 @@ function tryParseUrl(input: string): URL | null {
 async function callApi<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
   const allParams = { endpoint, ...params };
   const query = '?' + new URLSearchParams(allParams).toString();
-  const res = await fetch(`${API_BASE}${query}`);
+  const res = await fetch(apiUrl(`/api${query}`));
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`请求失败 (${res.status}): ${text}`);
@@ -31,7 +30,7 @@ export async function resolveShortUrl(input: string): Promise<{ type: 'song' | '
     const url = tryParseUrl(input);
     if (!url) return null;
     if (!url.hostname.includes('163cn.tv') && !url.hostname.includes('126.net')) return null;
-    const res = await fetch(`/api/resolve?url=${encodeURIComponent(input)}`);
+    const res = await fetch(apiUrl(`/api/resolve?url=${encodeURIComponent(input)}`));
     if (res.ok) return res.json();
     return null;
   } catch { return null; }
@@ -180,7 +179,7 @@ export async function importPlaylist(playlistId: string): Promise<{
     title: t.name || '未知歌曲',
     artist: (t.ar || []).map((a: any) => a.name).join(', ') || '未知歌手',
     coverUrl: t.al?.picUrl || '',
-    url: urlMap[t.id] || `/api/play?id=${t.id}`,
+    url: urlMap[t.id] || apiUrl(`/api/play?id=${t.id}`),
     lyrics: lyricMap[t.id] || DEFAULT_LYRICS,
     isFavorite: false,
   }));
@@ -201,7 +200,7 @@ export async function importSingleSong(songId: string): Promise<Song> {
   const s = detailData.songs[0];
 
   // 获取播放地址
-  let url = `/api/play?id=${s.id}`;
+  let url = apiUrl(`/api/play?id=${s.id}`);
   try {
     const urlData = await callApi<any>('song/url', { ids: String(s.id) });
     if (urlData.code === 200 && urlData.data?.[0]?.url) {
@@ -270,7 +269,7 @@ export async function searchSongs(keywords: string, limit: number = 10): Promise
     title: s.name || '未知歌曲',
     artist: (s.artists || []).map((a: any) => a.name).join(', ') || '未知歌手',
     coverUrl: coverMap[s.id] || '',
-    url: urlMap[s.id] || `/api/play?id=${s.id}`,
+    url: urlMap[s.id] || apiUrl(`/api/play?id=${s.id}`),
     lyrics: lyricMap[s.id] || DEFAULT_LYRICS,
     isFavorite: false,
   }));

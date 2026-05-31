@@ -47,7 +47,7 @@ async function resolveBilibiliUrl(url: string): Promise<{ bvid: string; title: s
   // Strip any non-URL text (e.g. Chinese title prefix from shared links)
   const cleanUrl = extractUrl(url);
   try {
-    const resp = await fetch(`/api/resolve?url=${encodeURIComponent(cleanUrl)}`);
+    const resp = await fetch(apiUrl(`/api/resolve?url=${encodeURIComponent(cleanUrl)}`));
     const data = await resp.json();
     if (data.type === 'bilibili' && data.id) return { bvid: data.id, title: data.id };
   } catch {}
