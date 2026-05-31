@@ -63,11 +63,12 @@ export default function LockScreen() {
       'white': '#ffffff',
       'green': 'linear-gradient(to bottom, #047857, #064e3b)',
       'purple': 'linear-gradient(to bottom, #6b21a8, #3b0764)',
+      'yellow': 'linear-gradient(to bottom, #fef3c7, #fde68a)',
       'black': '#000000',
       'gray': 'linear-gradient(to bottom, #374151, #111827)'
     };
     const bg = settings.osTheme ? (themeColors[settings.osTheme] || themeColors['gray']) : (themeColors['gray']);
-    const textColor = settings.osTheme === 'white' ? '#1e293b' : '#ffffff';
+    const textColor = (settings.osTheme === 'white' || settings.osTheme === 'yellow') ? '#1e293b' : '#ffffff';
 
     return { 
       background: bg,

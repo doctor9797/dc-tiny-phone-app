@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store';
-import { MessageCircle, Music, Settings, Moon, MessageSquare, Book, Wine, Scroll, BookOpen, Hourglass, Calendar, Sparkles, ReceiptText, Newspaper, PenSquare, PawPrint, Bot, NotebookPen, Mail, MessagesSquare, Heart, Film, Brain } from 'lucide-react';
+import { MessageCircle, Music, Settings, Moon, MessageSquare, Book, Wine, Scroll, BookOpen, Hourglass, Calendar, Sparkles, ReceiptText, Newspaper, PenSquare, PawPrint, Bot, NotebookPen, Mail, MessagesSquare, Heart, Film, Brain, Crosshair, Gem, Cloud, CloudMoon } from 'lucide-react';
 import { AppFolder, AppName } from '../types';
 import {
   DndContext,
@@ -444,9 +444,19 @@ export default function HomeScreen() {
     mailbox: { name: '信箱', icon: <Mail size={32} color="white" />, color: 'bg-amber-500' },
     forum: { name: '论坛', icon: <MessagesSquare size={32} color="white" />, color: 'bg-stone-600' },
     memory: { name: '记忆', icon: <Brain size={32} color="white" />, color: 'bg-purple-500' },
+    hunter: { name: '猎心', icon: <Crosshair size={32} color="white" />, color: 'bg-pink-300' },
+    marriage: { name: '婚姻', icon: <Gem size={32} color="white" />, color: 'bg-purple-600' },
+    weather: { name: '天气', icon: <Cloud size={32} color="white" />, color: 'bg-sky-500' },
+    dream: { name: '梦', icon: <CloudMoon size={32} color="white" />, color: 'bg-indigo-900' },
   };
   const allApps = useMemo(() => Object.keys(defaultApps) as AppName[], []);
   const showDock = settings.showDock !== false;
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
   const dockApps = useMemo(
     () => Array.from(new Set((settings.dockApps || []).filter((app): app is AppName => Boolean(app) && typeof app === 'string'))),
     [settings.dockApps]
@@ -465,6 +475,7 @@ export default function HomeScreen() {
       'pink':  ['bg-pink-200', 'bg-pink-300', 'bg-pink-200', 'bg-pink-300', 'bg-pink-200', 'bg-pink-100', 'bg-pink-200', 'bg-pink-300', 'bg-pink-200', 'bg-pink-300', 'bg-pink-200'],
       'green': ['bg-emerald-200', 'bg-emerald-300', 'bg-emerald-200', 'bg-emerald-300', 'bg-emerald-200', 'bg-emerald-100', 'bg-emerald-200', 'bg-emerald-300', 'bg-emerald-200', 'bg-emerald-300', 'bg-emerald-200'],
       'purple':['bg-purple-200', 'bg-purple-300', 'bg-purple-200', 'bg-purple-300', 'bg-purple-200', 'bg-purple-100', 'bg-purple-200', 'bg-purple-300', 'bg-purple-200', 'bg-purple-300', 'bg-purple-200'],
+      'yellow':['bg-yellow-200', 'bg-amber-200', 'bg-yellow-100', 'bg-amber-100', 'bg-yellow-300', 'bg-yellow-200', 'bg-amber-200', 'bg-yellow-100', 'bg-amber-300', 'bg-yellow-200', 'bg-amber-100'],
     };
 
     const palette = themePalettes[themeStr] || themePalettes['cyan'];
@@ -820,7 +831,7 @@ export default function HomeScreen() {
 
   return (
     <div 
-      className="absolute inset-0 z-0 overflow-hidden"
+      className="absolute inset-0 z-0"
       style={getBackgroundStyle()}
     >
       <DndContext 
@@ -858,12 +869,12 @@ export default function HomeScreen() {
                 setCurrentPage(nextPage);
               }, 120);
             }}
-            className={`w-full h-full flex overflow-x-auto overflow-y-hidden snap-x snap-proximity pt-16 no-scrollbar relative z-10 transition-colors overscroll-x-contain ${showDock ? 'pb-32' : 'pb-24'}`}
+            className={`w-full h-full flex overflow-x-auto snap-x snap-proximity no-scrollbar relative z-10 transition-colors overscroll-x-contain`}
           >
             {pages.map((pageItems, pageIndex) => (
-              <div key={pageIndex} className="w-full h-full flex-shrink-0 snap-start flex flex-col justify-between px-6 pb-4 min-w-[100vw]">
+              <div key={pageIndex} className={`w-full h-full flex-shrink-0 snap-start flex flex-col px-6 min-w-[100vw] ${showDock ? `pt-12 pb-32` : 'pt-20 pb-20'}`} style={showDock && isFullscreen ? { paddingTop: 'max(48px, 10vh)' } : undefined}>
                 <PageDropZone pageIndex={pageIndex}>
-                  <div className="grid grid-cols-4 gap-y-6 gap-x-4 content-start w-full h-full relative z-10 pointer-events-auto auto-rows-fr" style={{ gridTemplateRows: `repeat(${DESKTOP_ROWS}, minmax(0, 1fr))` }}>
+                  <div className={`grid grid-cols-4 w-full h-full relative z-10 pointer-events-auto auto-rows-fr content-start ${showDock ? `gap-y-12 gap-x-4` : 'gap-y-16 gap-x-4'}`} style={{ gridTemplateRows: `repeat(${DESKTOP_ROWS}, minmax(0, 1fr))`, rowGap: showDock && isFullscreen ? 'max(48px, 8vh)' : undefined }}>
                     <DesktopWidgets page={pageIndex} />
                     {(() => {
                       const occupiedSlots = widgetOccupancyByPage[pageIndex]?.occupied || new Set<number>();
@@ -922,6 +933,8 @@ export default function HomeScreen() {
                     )}
                   </div>
                 </PageDropZone>
+                {/* iOS Safari: spacer creates vertical overflow to trigger address bar hide */}
+                <div className="h-16 flex-shrink-0" />
               </div>
             ))}
           </div>

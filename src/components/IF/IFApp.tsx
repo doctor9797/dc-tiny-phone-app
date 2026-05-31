@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, History, Sparkles, Trash2, Play, Plus, SendHorizonal, UserRound, Theater, Wand2, Users } from 'lucide-react';
 import { generateAIResponse } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 import { IFRoleIdentity, IFSession, IFSessionMessage } from '../../types';
 
 const BACKGROUNDS = ['现代都市', '赛博朋克', '西幻王国', '校园', '末日废土', '悬浮星港', '民国迷城', '神祇都市', '哥谭夜色', '异能研究所'];
@@ -275,6 +276,10 @@ ${recentHistory}
         messages: persistedMessages,
         updatedAt: updatedSession.updatedAt
       });
+      for (const charId of currentSession.characterIds) {
+        saveInteractionMemory(charId, `在IF世界《${currentSession.name}》中和我一起推进剧情`, userAction);
+        useAppStore.getState().addEmotionEvent({ characterId: charId, paDelta: 0.1, naDelta: -0.02, word: '沉浸', valence: 0.3, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
+      }
     } catch (error: any) {
       const failMessage: IFSessionMessage = { role: 'system', name: '系统', text: error?.message || '推进失败，请重试。' };
       const persistedMessages = [...nextMessages, failMessage];
@@ -291,7 +296,7 @@ ${recentHistory}
   if (view === 'setup') {
     return (
       <div className="h-full flex flex-col bg-[#f7f2ea] text-slate-900">
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-stone-200 bg-[#fbf7f1]">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-stone-200 bg-[#fbf7f1]">
           <button onClick={() => { resetSetup(); setView('list'); }}><ChevronLeft size={28} /></button>
           <div className="font-black tracking-wide">创建 IF</div>
           <div className="w-7" />
@@ -376,7 +381,7 @@ ${recentHistory}
   if (view === 'play' && currentSession) {
     return (
       <div className="h-full flex flex-col bg-[#15131a] text-white">
-        <div className="px-4 pt-12 pb-4 border-b border-white/10 bg-black/25 backdrop-blur">
+        <div className="px-4 pt-7 pb-4 border-b border-white/10 bg-black/25 backdrop-blur">
           <div className="flex items-center justify-between mb-3">
             <button onClick={() => { setView('list'); setCurrentSession(null); setCurrentSessionId(null); }}><ChevronLeft size={28} /></button>
             <div className="font-black tracking-wide">IF</div>
@@ -462,7 +467,7 @@ ${recentHistory}
 
   return (
     <div className="h-full flex flex-col bg-[#f6f1ea] text-slate-900">
-      <div className="px-4 pt-12 pb-4 border-b border-stone-200 bg-[#fcfaf6]">
+      <div className="px-4 pt-7 pb-4 border-b border-stone-200 bg-[#fcfaf6]">
         <div className="flex items-center justify-between mb-3">
           <button onClick={closeApp}><ChevronLeft size={28} /></button>
           <div className="font-black tracking-wide">IF</div>

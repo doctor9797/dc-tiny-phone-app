@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, User, Heart, Brain, Dumbbell, Hand, BookOpen, Battery, Smile, Pizza, Compass, Briefcase, Zap, PawPrint, Gamepad2, Store, CircleDollarSign, X, Sparkles, Trophy, Target } from 'lucide-react';
 import { generateAIResponse } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 
 const PET_TYPES = [
   { id: 'dog', name: '小狗', palette: ['#f8d7b5', '#d79a62', '#6a4a2f'] },
@@ -657,11 +658,20 @@ export default function CoPetApp() {
       const res = await generateAIResponse(`为我和${char?.name}以及宠物${copetData.name}设计一个合作冒险的简短场景开头，以及2个不同的行动选项应对场景危机。按JSON格式返回：{"scene": "场景描述...", "options": ["选项1", "选项2"]}`);
       const data = JSON.parse(res.replace(/```json/g, '').replace(/```/g, ''));
       setAdventureState(data);
+      saveInteractionMemory(copetData.companionId, `和${char?.name}以及宠物${copetData.name}一起进行合作冒险`);
+      useAppStore.getState().addEmotionEvent({ characterId: copetData.companionId, paDelta: 0.2, naDelta: -0.05, word: '兴奋', valence: 0.5, arousal: 0.6, matchSource: 'free_form', source: 'manual' });
     } catch {
-      setAdventureState({
-        scene: `你们带着${copetData.name}散步时，突然发现草丛里有一个发光的神秘宝箱，上面有一个奇特的锁，似乎需要两个人同时破译。`,
-        options: ['试图强行破坏锁', '仔细研究锁上的古老暗号']
-      });
+      // AI生成fallback场景
+      try {
+        const fallbackScene = await generateAIResponse(`设计一个和宠物${copetData.name}以及${char?.name}的简短合作冒险开局，返回JSON：{"scene": "场景描述", "options": ["选项1", "选项2"]}`);
+        const fallbackData = JSON.parse(fallbackScene.replace(/```json/g, '').replace(/```/g, ''));
+        setAdventureState({ scene: fallbackData.scene, options: fallbackData.options });
+      } catch {
+        setAdventureState({
+          scene: `你们带着${copetData.name}散步时，突然发现草丛里有一个发光的神秘宝箱，上面有一个奇特的锁，似乎需要两个人同时破译。`,
+          options: ['试图强行破坏锁', '仔细研究锁上的古老暗号']
+        });
+      }
     } finally {
       setIsAiThinking(false);
     }
@@ -676,10 +686,17 @@ export default function CoPetApp() {
       const earned = Math.floor(Math.random() * 50) + 30; // 30-80 coins
       updateCoPet({ ...copetData, coins: (copetData.coins || 0) + earned });
       setAdventureState(prev => prev ? { ...prev, result: res, coins: earned } : null);
+      saveInteractionMemory(copetData.companionId, `和${char?.name}以及宠物${copetData.name}在冒险中选择了行动`, choiceText);
+      useAppStore.getState().addEmotionEvent({ characterId: copetData.companionId, paDelta: 0.15, naDelta: -0.03, word: '好奇', valence: 0.4, arousal: 0.5, matchSource: 'free_form', source: 'manual' });
     } catch {
       const earned = 50;
       updateCoPet({ ...copetData, coins: (copetData.coins || 0) + earned });
-      setAdventureState(prev => prev ? { ...prev, result: `${char?.name}配合你的行动，你们成功化解了危机，宠物开心地跳了起来。发现了一些遗留的硬币！`, coins: earned } : null);
+      try {
+        const fallbackRes = await generateAIResponse(`用${char?.name}的口吻（50字内）描述ta如何配合你刚才的选择，最终合作成功。`);
+        setAdventureState(prev => prev ? { ...prev, result: fallbackRes.replace(/[#*]/g, '').trim(), coins: earned } : null);
+      } catch {
+        setAdventureState(prev => prev ? { ...prev, result: `${char?.name}配合你的行动，你们成功化解了危机，宠物开心地跳了起来。发现了一些遗留的硬币！`, coins: earned } : null);
+      }
     } finally {
       setIsAiThinking(false);
     }
@@ -798,10 +815,17 @@ export default function CoPetApp() {
     
     try {
       finalRes = await generateAIResponse(prompt);
+      saveInteractionMemory(copetData.companionId, `和宠物${copetData.name}一起${actionType === 'feed' ? '喂食' : actionType === 'play' ? '玩耍' : actionType === 'study' ? '训练' : actionType === 'explore' ? '探险' : '休息'}`);
+      useAppStore.getState().addEmotionEvent({ characterId: copetData.companionId, paDelta: 0.12, naDelta: -0.02, word: '温暖', valence: 0.4, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
     } catch(e) {
-      finalRes = `（${char.name} 微笑着看了一眼，没有多说什么。）`;
+      try {
+        finalRes = await generateAIResponse(`用${char?.name}的口吻（20字内）描述ta对宠物${copetData.name}此刻状态的简短反应。`);
+        finalRes = finalRes.replace(/[#*]/g, '').trim();
+      } catch {
+        finalRes = `（${char.name} 微笑着看了一眼，没有多说什么。）`;
+      }
     }
-    
+
     const newExp = copetData.exp + expGain;
     let newLevel = copetData.level;
     let newStage = copetData.stage;
@@ -944,9 +968,16 @@ const handlePetClick = async () => {
       const res = await generateAIResponse(`你是DC角色${char?.name}，我们养的宠物刚被我点了一下。请结合宠物类型“${copetData.petType}”和当前状态（心情${copetData.stats.mood}，体力${copetData.stats.energy}），输出一句10字以内的宠物内心想法，不要用emoji，不要加引号。可参考语气：${baseThought.join('、')}`);
       setThoughtText(res.replace(/[#*]/g, '').trim());
       setTimeout(() => setShowThoughtBubble(false), 3000);
+      saveInteractionMemory(copetData.companionId, `和宠物${copetData.name}互动`, res);
+      useAppStore.getState().addEmotionEvent({ characterId: copetData.companionId, paDelta: 0.1, naDelta: -0.02, word: '喜爱', valence: 0.35, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
     } catch {
-      const fallback = (PET_THOUGHTS[copetData.petType as keyof typeof PET_THOUGHTS] || PET_THOUGHTS.dog)[0];
-      setThoughtText(fallback);
+      // AI生成fallback
+      try {
+        const fallbackRes = await generateAIResponse(`请用一句话（10字以内）模拟宠物${copetData.petType}被摸头时的内心反应，不要加引号和emoji。`);
+        setThoughtText(fallbackRes.replace(/[#*""]/g, '').trim());
+      } catch {
+        setThoughtText('蹭了蹭你的手心。');
+      }
       setTimeout(() => setShowThoughtBubble(false), 3000);
     } finally {
       setIsAiThinking(false);

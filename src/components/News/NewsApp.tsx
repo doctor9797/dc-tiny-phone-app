@@ -4,6 +4,7 @@ import { Settings, ChevronLeft, RefreshCcw, Newspaper, Archive } from 'lucide-re
 import { generateAIResponse } from '../../lib/ai';
 import { format } from 'date-fns';
 import { sendCharacterActivityFollowup } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 
 const NEWS_CHANNELS = [
   '头条',
@@ -94,6 +95,13 @@ export default function NewsApp() {
         detail: parsed.slice(0, 3).map((article: any) => article.title).join('；'),
         timestamp: Date.now()
       });
+      // 日报记忆+情绪
+      const store = useAppStore.getState();
+      Object.keys(store.characters).forEach(charId => {
+        if ((store.characters[charId] as any).isDisabled) return;
+        saveInteractionMemory(charId, `看了日报${category}栏目`, parsed.slice(0, 2).map((a: any) => a.title).join('；'), 'event', 2);
+        store.addEmotionEvent({ characterId: charId, paDelta: 0.08, naDelta: -0.02, word: '关注', valence: 0.3, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
+      });
       const enabledCharacters = Object.values(characters).filter(char => (char as any).isDisabled !== true);
       const followupChar = enabledCharacters.length > 0 ? enabledCharacters[Math.floor(Math.random() * enabledCharacters.length)] : null;
       if (followupChar) {
@@ -122,7 +130,7 @@ export default function NewsApp() {
   if (showSettings) {
     return (
       <div className="h-full flex flex-col bg-stone-100 text-stone-900 font-serif">
-        <div className="px-4 pt-12 pb-3 flex items-center justify-between border-b border-stone-300 bg-stone-200">
+        <div className="px-4 pt-7 pb-3 flex items-center justify-between border-b border-stone-300 bg-stone-200">
           <button onClick={() => setShowSettings(false)} className="text-stone-700 active:scale-95"><ChevronLeft size={28} /></button>
           <h1 className="text-lg font-bold">报社设置</h1>
           <div className="w-8"></div>
@@ -147,7 +155,7 @@ export default function NewsApp() {
   if (view === 'archive') {
     return (
       <div className="h-full flex flex-col bg-[#f4f1ea] text-[#2c2c2c] font-serif overflow-hidden">
-        <div className="px-4 pt-12 pb-3 border-b border-stone-300 flex items-center justify-between shrink-0">
+        <div className="px-4 pt-7 pb-3 border-b border-stone-300 flex items-center justify-between shrink-0">
           <button onClick={() => setView('channels')}><ChevronLeft size={28} /></button>
           <div className="font-bold">往期报纸</div>
           <div className="w-8" />
@@ -180,7 +188,7 @@ export default function NewsApp() {
   if (view === 'channels') {
     return (
       <div className="h-full flex flex-col bg-[#f4f1ea] text-[#2c2c2c] font-serif overflow-hidden">
-        <div className="px-6 pt-12 pb-4 border-b-4 border-double border-stone-800 flex flex-col items-center relative z-10 shrink-0 shadow-sm">
+        <div className="px-6 pt-7 pb-4 border-b-4 border-double border-stone-800 flex flex-col items-center relative z-10 shrink-0 shadow-sm">
           <button className="absolute left-4 top-12 opacity-60 hover:opacity-100" onClick={closeApp}>
             <ChevronLeft size={28} />
           </button>
@@ -226,7 +234,7 @@ export default function NewsApp() {
   return (
     <div className="h-full flex flex-col bg-[#f4f1ea] text-[#2c2c2c] font-serif overflow-hidden">
       {/* Newspaper Header */}
-      <div className="px-6 pt-12 pb-4 border-b-4 border-double border-stone-800 flex flex-col items-center relative z-10 shrink-0 shadow-sm">
+      <div className="px-6 pt-7 pb-4 border-b-4 border-double border-stone-800 flex flex-col items-center relative z-10 shrink-0 shadow-sm">
         <button 
           className="absolute left-4 top-12 opacity-60 hover:opacity-100" 
           onClick={() => setView('channels')}

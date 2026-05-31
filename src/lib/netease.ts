@@ -25,6 +25,18 @@ async function callApi<T>(endpoint: string, params?: Record<string, string>): Pr
   return res.json();
 }
 
+/** 解析网易云短链接（163cn.tv），获取真实类型和 ID */
+export async function resolveShortUrl(input: string): Promise<{ type: 'song' | 'playlist' | 'unknown'; id: string | null } | null> {
+  try {
+    const url = tryParseUrl(input);
+    if (!url) return null;
+    if (!url.hostname.includes('163cn.tv') && !url.hostname.includes('126.net')) return null;
+    const res = await fetch(`/api/resolve?url=${encodeURIComponent(input)}`);
+    if (res.ok) return res.json();
+    return null;
+  } catch { return null; }
+}
+
 export function extractPlaylistId(input: string): string | null {
   if (/^\d+$/.test(input.trim())) return input.trim();
   try {
@@ -155,7 +167,7 @@ export async function importPlaylist(playlistId: string): Promise<{
     const urlData = await callApi<any>('song/url', { ids: songIds.join(',') });
     if (urlData.code === 200 && urlData.data) {
       for (const item of urlData.data) {
-        if (item.url) urlMap[item.id] = item.url;
+        if (item.url) urlMap[item.id] = item.url.replace(/^http:\/\//i, 'https://');
       }
     }
   } catch {}
@@ -168,7 +180,7 @@ export async function importPlaylist(playlistId: string): Promise<{
     title: t.name || '未知歌曲',
     artist: (t.ar || []).map((a: any) => a.name).join(', ') || '未知歌手',
     coverUrl: t.al?.picUrl || '',
-    url: urlMap[t.id] || `https://music.163.com/song/media/outer/url?id=${t.id}.mp3`,
+    url: urlMap[t.id] || `/api/play?id=${t.id}`,
     lyrics: lyricMap[t.id] || DEFAULT_LYRICS,
     isFavorite: false,
   }));
@@ -189,11 +201,11 @@ export async function importSingleSong(songId: string): Promise<Song> {
   const s = detailData.songs[0];
 
   // 获取播放地址
-  let url = `https://music.163.com/song/media/outer/url?id=${s.id}.mp3`;
+  let url = `/api/play?id=${s.id}`;
   try {
     const urlData = await callApi<any>('song/url', { ids: String(s.id) });
     if (urlData.code === 200 && urlData.data?.[0]?.url) {
-      url = urlData.data[0].url;
+      url = urlData.data[0].url.replace(/^http:\/\//i, 'https://');
     }
   } catch {}
 
@@ -209,4 +221,57 @@ export async function importSingleSong(songId: string): Promise<Song> {
     lyrics,
     isFavorite: false,
   };
+}
+
+/** 搜索歌曲，返回简化后的歌曲列表 */
+export async function searchSongs(keywords: string, limit: number = 10): Promise<Song[]> {
+  const data = await callApi<any>('search', { s: keywords, type: '1', limit: String(limit) });
+  if (data.code !== 200 || !data.result?.songs?.length) return [];
+
+  const songs = data.result.songs.slice(0, limit);
+  const songIds = songs.map((s: any) => s.id).filter(Boolean);
+
+  // 批量获取歌词
+  const lyricMap = await fetchLyricsForSongs(songIds);
+
+  // 先尝试从搜索结果的 album/al 字段取封面
+  let coverMap: Record<number, string> = {};
+  for (const s of songs) {
+    if (s.al?.picUrl) coverMap[s.id] = s.al.picUrl;
+    else if (s.album?.picUrl) coverMap[s.id] = s.album.picUrl;
+  }
+
+  // 对没有封面的歌曲，通过 song/detail 批量补全
+  const missingIds = songIds.filter(id => !coverMap[id]);
+  if (missingIds.length > 0) {
+    try {
+      const detail = await callApi<any>('song/detail', { ids: missingIds.join(',') });
+      if (detail.songs?.length) {
+        for (const s of detail.songs) {
+          if (s.al?.picUrl) coverMap[s.id] = s.al.picUrl;
+        }
+      }
+    } catch {}
+  }
+
+  // 批量获取播放地址（CDN 直链，不走代理）
+  let urlMap: Record<number, string> = {};
+  try {
+    const urlData = await callApi<any>('song/url', { ids: songIds.join(',') });
+    if (urlData.code === 200 && urlData.data) {
+      for (const item of urlData.data) {
+        if (item.url) urlMap[item.id] = item.url.replace(/^http:\/\//i, 'https://');
+      }
+    }
+  } catch {}
+
+  return songs.map((s: any) => ({
+    id: `netease_${s.id}`,
+    title: s.name || '未知歌曲',
+    artist: (s.artists || []).map((a: any) => a.name).join(', ') || '未知歌手',
+    coverUrl: coverMap[s.id] || '',
+    url: urlMap[s.id] || `/api/play?id=${s.id}`,
+    lyrics: lyricMap[s.id] || DEFAULT_LYRICS,
+    isFavorite: false,
+  }));
 }

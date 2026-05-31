@@ -3,6 +3,7 @@ import { useAppStore } from '../../store';
 import { ChevronLeft, Plus, X, PieChart as PieChartIcon, Settings, User, Trash2 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { getCharacterReply, sendCharacterActivityFollowup } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 
 export default function BillingApp() {
   const { 
@@ -94,6 +95,14 @@ export default function BillingApp() {
       timestamp: Date.now(),
       managerComment: comment
     });
+
+    // 记账记忆+情绪
+    const cat = billingCategories.find(c => c.id === selectedCatId);
+    if (manager) {
+      saveInteractionMemory(manager.id, `记账了${cost}元(${cat?.name})`, note || '', 'event', 3);
+      const store = useAppStore.getState();
+      store.addEmotionEvent({ characterId: manager.id, paDelta: cost > 1000 ? -0.15 : 0.05, naDelta: cost > 1000 ? 0.1 : -0.02, word: cost > 1000 ? '心疼' : '满意', valence: cost > 1000 ? -0.2 : 0.2, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
+    }
     
     setAmount('');
     setNote('');
@@ -527,7 +536,7 @@ export default function BillingApp() {
                  <User size={20} className="text-stone-400" />
                )}
             </div>
-            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">{manager ? manager.name.substring(0,3) : '+ 添加管家'}</span>
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest max-w-[80px] truncate">{manager ? manager.name : '+ 添加管家'}</span>
           </button>
         </div>
 

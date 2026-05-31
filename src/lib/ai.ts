@@ -1,15 +1,27 @@
 import { GoogleGenAI } from '@google/genai';
 import { useAppStore } from '../store';
-import { getTopMemoriesForPrompt, extractMemoryFromConversation } from './characterMemory';
-import { writeDecorationMoodToMemory } from './moodPool';
+import { getTopMemoriesForPrompt, extractMemoryFromConversation, estimateSentiment, canGenerateDailyEvent, markDailyEventGenerated } from './characterMemory';
 import { lookupEmotion } from './emotionDictionary';
 import { getCurrentMood, buildMoodPrompt } from './moodLoop';
+import { writeDecorationMoodToMemory } from './moodPool';
+
+export function extractImageData(dataUrl: string): { mimeType: string; data: string } | null {
+  try {
+    const match = dataUrl.match(/^data:(image\/(\w+));base64,(.+)$/);
+    if (match) return { mimeType: match[1], data: match[3] };
+  } catch {}
+  return null;
+}
 
 const cleanAiText = (text: string) =>
   text
     .replace(/```[\s\S]*?```/g, match => match.replace(/```/g, ''))
     .replace(/^[#*\-\s>]+/gm, '')
     .replace(/\n{3,}/g, '\n\n')
+    .replace(/^[一-鿿\w]+[：:]\s*/gm, '')  // strip "Name: " prefix per line
+    .replace(/^[（(][^）)]*[）)]\s*/gm, '')           // strip "(action)" prefix per line
+    .replace(/^【[^】]*】\s*/gm, '')                  // strip "【action】" prefix per line
+    .replace(/^[*]{1,2}[^*]*[*]{1,2}\s*/gm, '')      // strip *action* prefix per line
     .trim();
 
 const normalizeForceRuleText = (value?: string) =>
@@ -36,7 +48,6 @@ const isCharacterEnabled = (characterId: string) => {
 
 
 
-
 export async function generateAIResponse(
   prompt: string,
   systemInstruction?: string,
@@ -46,7 +57,7 @@ export async function generateAIResponse(
   const apiKey = settings.apiKey || '';
   const modelName = settings.apiModel || 'gemini-2.5-flash';
 
-  // Server proxy mode: no local key → 走服务端代理（部署环境）
+  // Server proxy mode: no local key -> 走服务端代理（部署环境）
   if (!apiKey && !settings.apiBaseUrl && !images?.length) {
     try {
       const res = await fetch('/api/chat', {
@@ -62,9 +73,9 @@ export async function generateAIResponse(
         if (data.error) throw new Error(data.error);
       }
       const errText = await res.text().catch(() => '');
-      throw new Error(errText || `代理请求失败 (${res.status})`);
+      throw new Error(errText || '代理请求失败 (' + res.status + ')');
     } catch (e: any) {
-      throw new Error(e.message?.includes('配置') ? e.message : `AI 服务未配置（请在设置中填入 API Key）`);
+      throw new Error(e.message?.includes('配置') ? e.message : 'AI 服务未配置（请在设置中填入 API Key）');
     }
   }
 
@@ -79,7 +90,7 @@ export async function generateAIResponse(
     if (settings.apiBaseUrl && forceOpenAI) {
       let endpoint = settings.apiBaseUrl.trim();
       if (!endpoint.endsWith('/chat/completions') && !endpoint.endsWith('/completions')) {
-         endpoint = `${endpoint.replace(/\/$/, '')}/chat/completions`;
+         endpoint = endpoint.replace(/\/$/, '') + '/chat/completions';
       }
 
       const messages: any[] = [];
@@ -88,7 +99,7 @@ export async function generateAIResponse(
       if (images?.length) {
         const content: any[] = [{ type: 'text', text: prompt }];
         for (const img of images) {
-          content.push({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.data}` } });
+          content.push({ type: 'image_url', image_url: { url: 'data:' + img.mimeType + ';base64,' + img.data } });
         }
         messages.push({ role: 'user', content });
       } else {
@@ -99,7 +110,7 @@ export async function generateAIResponse(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': apiKey !== 'sk-local' ? `Bearer ${apiKey}` : ''
+          'Authorization': apiKey !== 'sk-local' ? 'Bearer ' + apiKey : ''
         },
         body: JSON.stringify({ model: modelName, messages }),
         signal: controller.signal,
@@ -107,7 +118,7 @@ export async function generateAIResponse(
       clearTimeout(timeoutId);
       if (!res.ok) {
         const errorData = await res.text();
-        throw new Error(`API 返回错误: ${res.status} - ${errorData}`);
+        throw new Error('API 返回错误: ' + res.status + ' - ' + errorData);
       }
       const data = await res.json();
       return data.choices?.[0]?.message?.content || '';
@@ -177,187 +188,160 @@ export async function getCharacterReply(
   const state = useAppStore.getState();
   if (!isCharacterEnabled(characterId)) return '';
 
-  // Write today's decoration mood to ambient memory (first interaction of the day)
-  writeDecorationMoodToMemory(characterId);
-
-  // Phase 5: Mood Loop — compute current emotional state and build mood prompt
+  // Phase 5: Mood Loop
   const currentMood = getCurrentMood(characterId);
   const moodPrompt = buildMoodPrompt(currentMood);
 
   const character = state.characters[characterId];
   const settings = state.settings;
-  // 只取包含当前角色的那条世界书，避免其他世界书的干扰
   const relevantWorld = state.worldSettings.find(ws =>
     ws.characters.some(c => c.id === characterId)
   );
   const worldContext = relevantWorld
-    ? `${relevantWorld.title}: ${relevantWorld.content}`
-    : 'DC宇宙';
-  const persona = `${settings.persona.name},${settings.persona.age}岁,${settings.persona.profession},${settings.persona.identity}`;
-  
-  // Look up character in WorldBook for settings
+    ? relevantWorld.title + ': ' + relevantWorld.content
+    : '';
+
   let card = null;
   for (const ws of state.worldSettings) {
     const found = ws.characters.find(c => c.id === characterId);
     if (found) { card = found; break; }
   }
 
-  const personality = card?.personality || character.personality || '';
-  const experience = card?.experience || '';
-  const relationship = card?.relationship || character.relationship || '';
-  const viewOnMe = card?.viewOnMe || '';
+  const trunc = (s: string, n: number) => s.length > n ? s.slice(0, n) + '…' : s;
+  const personality = trunc(card?.personality || character.personality || '', 200);
+  const experience = trunc(card?.experience || character.experience || '', 200);
+  const biography = trunc(card?.biography || character.biography || '', 300);
+  const relationship = trunc(card?.relationship || character.relationship || '', 200);
+  const viewOnMe = trunc(card?.viewOnMe || character.viewOnMe || '', 200);
   const characterForceRequirements = normalizeForceRuleText(card?.forceRequirements);
-  // 只取当前角色所在世界书的 baseCode，避免其他世界书的干扰
   const worldForceRequirements = relevantWorld
     ? normalizeForceRuleText(relevantWorld.baseCode)
     : '';
-  const characterMemories = getTopMemoriesForPrompt(characterId, 250);
+  const characterMemories = getTopMemoriesForPrompt(characterId, 300);
   const latestNewsIssue = (state.newsIssues || [])[0];
   const newsContext = latestNewsIssue
-    ? `[新闻] 最新报道：${latestNewsIssue.articles.slice(0, 2).map(a => a.title).join('、')}`
+    ? '【新闻】' + latestNewsIssue.articles.slice(0, 2).map(a => a.title).join('、')
     : '';
 
-  // Apply timezone offset and get accurate local time
   const timeOffsetMs = (settings.timeOffsetMinutes || 0) * 60 * 1000;
   const localCurrentTime = currentTime + timeOffsetMs;
-  const now = new Date(localCurrentTime);
-  
-  // Format time clearly for AI
-  const formattedTime = now.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
-  
-  // Calculate time period description
-  const hour = now.getHours();
-  let timePeriod = '';
-  if (hour >= 5 && hour < 12) timePeriod = '早晨/上午';
-  else if (hour >= 12 && hour < 14) timePeriod = '中午';
-  else if (hour >= 14 && hour < 18) timePeriod = '下午';
-  else if (hour >= 18 && hour < 22) timePeriod = '晚上';
-  else if (hour >= 22 || hour < 5) timePeriod = '深夜/凌晨';
 
-  // Calculate time gap (approximate)
   const history = state.chats[characterId] || [];
-  let timeContext = '';
-  if (history.length > 0) {
-    const lastMsg = history[history.length - 1];
-    const gapMs = localCurrentTime - lastMsg.timestamp;
-    const gapMinutes = Math.floor(gapMs / (1000 * 60));
-    const gapHours = Math.floor(gapMinutes / 60);
-    
-    if (gapMinutes > 1) {
-      if (gapMinutes < 60) {
-        timeContext = `距离上次聊天已经过去了 ${gapMinutes} 分钟。现在是 ${formattedTime}，属于${timePeriod}。`;
-      } else if (gapHours < 24) {
-        timeContext = `距离上次聊天已经过去了 ${gapHours} 小时。现在是 ${formattedTime}，属于${timePeriod}。`;
-      } else {
-        const gapDays = Math.floor(gapHours / 24);
-        timeContext = `距离上次聊天已经过去了 ${gapDays} 天。现在是 ${formattedTime}，属于${timePeriod}。`;
-      }
-    } else {
-      timeContext = `现在是 ${formattedTime}，属于${timePeriod}。`;
-    }
-  } else {
-    timeContext = `现在是 ${formattedTime}，属于${timePeriod}。`;
+
+  // ── Compact system instruction ──
+  const characterName = card?.name || character.name;
+  const cardAffection = card?.affection ?? character.affection ?? 50;
+  const cardNickname = card?.userNickname || character.userNickname || '你';
+  const cardInteractionMode = card?.interactionMode || character.interactionMode || '';
+  const sysParts: string[] = [
+    '角色：' + characterName + '。',
+  ];
+  if (worldContext) sysParts.push('世界观：' + worldContext);
+  if (personality) sysParts.push('性格：' + personality + '。');
+  if (experience) sysParts.push('经历：' + experience + '。');
+  if (biography) sysParts.push('档案：' + biography + '。');
+  sysParts.push('关系：' + relationship + '（你=' + cardNickname + '，好感' + cardAffection + '/100）。');
+  if (viewOnMe) sysParts.push('对你的看法：' + viewOnMe);
+  if (cardInteractionMode) sysParts.push('相处模式：' + cardInteractionMode + '——你必须严格按此相处模式对待我。');
+  if (characterMemories) sysParts.push('记忆：\n' + characterMemories + '\n（不记得说不知道）');
+  if (newsContext) sysParts.push(newsContext);
+  sysParts.push('风格：纯文字微信聊天，严禁动作/神态/心理描写。消息前无角色名/冒号/括号/星号，直接以文字开头。2-4条用\\n\\n分隔。严禁第四面墙——你就是角色本人，不是AI，不提扮演/模型/设定。');
+  if (settings.bilingual) sysParts.push('双语：先中后英。');
+  sysParts.push(moodPrompt);
+  // Force requirements at the very end for maximum impact
+  const allForceRules = [worldForceRequirements, characterForceRequirements].filter(Boolean).join('\n');
+  if (allForceRules) sysParts.push('【最重要的强制规则——必须100%遵守，优先级高于一切】\n' + allForceRules);
+  const systemInstruction = sysParts.join('\n');
+
+  const recentCount = 12;
+  const totalHistoryCount = history.length - 1;
+  const olderHistory = totalHistoryCount > recentCount
+    ? history.slice(0, totalHistoryCount - recentCount)
+    : [];
+
+  let olderSummary = '';
+  if (olderHistory.length > 5) {
+    const topics = olderHistory
+      .filter(msg => msg.text.length > 4)
+      .map(msg => msg.text.length > 15 ? msg.text.slice(0, 15) + '…' : msg.text)
+      .slice(-5)
+      .join(' -> ');
+    olderSummary = '【前情】' + topics + '\n\n';
   }
 
-
-  // 使用世界书中该角色的设定（如果有的话），否则用默认角色数据
-  const characterName = card?.name || character.name;
-  const systemInstruction = `你现在扮演角色：${characterName}。
-
-【世界观】${worldContext}
-【我】${persona}
-
-【角色设定】：
-- 性格：${personality}
-- 个人经历：${experience}
-- 与【我】的关系：${relationship}
-- 你对【我】的看法：${viewOnMe}
-- 你对【我】的称呼：${character.userNickname || '你'}
-
-${characterMemories ? "【记忆】：\n" + characterMemories + "\n" : ""}
-${newsContext}
-
-⚠️ 禁止编造过去。不知道就说不知道，只回应当前消息，不要虚构。
-
-【规则】
-- 像真人微信聊天，禁止括号/星号等动作描写
-- 发2-4条短消息，用\n\n分隔
-- 转账：[转账] ¥金额 - 说明
-- 礼物：[礼物] 礼物名称
-- 当前${timePeriod}，问候必须匹配时间段：
-      早5-12:早上好 中午12-14:中午好 下午14-18:下午好 晚上18-22:晚上好 深夜22-5:这么晚了
-${settings.bilingual ? '必须双语：第一行中文，第二行英文。' : ''}
-
-${moodPrompt}
-
-${worldForceRequirements ? `【强制】${worldForceRequirements}` : ''}
-${characterForceRequirements ? `【强制】${characterForceRequirements}` : ''}
-${worldForceRequirements || characterForceRequirements ? '输出前检查以上强制，冲突则重写。' : ''}`;
-
-  const recentHistory = history.slice(-1).map(msg =>
-    `${msg.senderId === 'user' ? settings.persona.name : character.name}: ${msg.text}`
+  const recentHistory = history.slice(0, -1).slice(-recentCount).map(msg =>
+    (msg.senderId === 'user' ? '你' : characterName) + '：' + msg.text
   ).join('\n');
 
-  const prompt = `[上一条]${recentHistory}\n${extraContext ? `[场景]${extraContext}\n` : ''}[消息]${userMessage}`;
+  // ── Inject pendingAppMessage (blocked app message while not friends) ──
+  const pendingMsg = (character as any).pendingAppMessage;
+  let appContext = '';
+  if (pendingMsg) {
+    appContext = '【待处理消息】之前你有一件事要和' + cardNickname + '说：' + pendingMsg + '\n如果聊完了删好友的事，可以自然过渡到这件事。\n';
+  }
+
+  const prompt = (recentHistory ? '【最近】\n' + recentHistory + '\n\n' : '')
+    + olderSummary
+    + (appContext ? appContext : '')
+    + (extraContext ? '【场景】' + extraContext + '\n' : '')
+    + '【说】' + userMessage;
 
   const draftReply = cleanAiText(await generateAIResponse(prompt, systemInstruction, images));
+
+  // Clear pendingAppMessage after it's been consumed
+  if (pendingMsg) {
+    try {
+      useAppStore.getState().updateCharacter(characterId, { pendingAppMessage: undefined } as any);
+    } catch {}
+  }
+
+  // ── Save basic conversation memory ──
+  const raw = userMessage.trim();
+  if (raw.length >= 3) {
+    const memState = useAppStore.getState();
+    const memBank = memState.characterMemoryBank[characterId] || [];
+    const memSummary = raw.length > 60 ? raw.slice(0, 60) + '…' : raw;
+    const isTrivial = /^(嘞|哦|好|是|对|ok|的|知道了|明白|哈哈|好吧|行|可以|没事|没什么|算了|拜|再见|晚安|早安|hi|hello|嗤)[!！。.]?$/i.test(raw);
+    const isDup = memBank.some(m => m.summary === memSummary || m.content.startsWith(raw.slice(0, 20)));
+    if (!isTrivial && !isDup) {
+      memState.addCharacterMemory(characterId, {
+        type: 'conversation',
+        content: raw + '\n---\n' + draftReply,
+        summary: memSummary,
+        tags: [],
+        valence: estimateSentiment(raw).valence,
+        arousal: estimateSentiment(raw).arousal,
+        importance: 3,
+        layer: 'daily',
+      });
+    }
+  }
+
+  // Run scoring + AI extraction + daily event generation (non-blocking)
+  (async () => {
+    await scoreConversationEmotion(characterId, userMessage, draftReply).catch(() => {});
+    await extractMemoryFromConversation(characterId, userMessage, draftReply).catch(() => {});
+    // Generate today's AI-powered independent character events (3-5 per day)
+    // These events have valence/arousal and affect the character's mood via PANAS.
+    await generateDailyEvents(characterId).catch(() => {});
+  })();
 
   if (!worldForceRequirements && !characterForceRequirements) {
     return draftReply;
   }
 
   const revisedReply = cleanAiText(await generateAIResponse(
-    `你是严格的规则审核员。检查下面的回复是否违反了强制规则。如果有任何违反，必须彻底重写；如果完全合规，就原样输出。不要解释，只输出最终文本。
-
-【强制规则（必须逐条遵守，违者重写）】
-${worldForceRequirements ? `【世界书底层代码】\n${worldForceRequirements}\n` : ''}
-${characterForceRequirements ? `【角色卡强制要求】\n${characterForceRequirements}\n` : ''}
-
-【原始回复草稿】
-${draftReply}`,
-    `你是一个严格的规则审核机器人。你唯一的任务就是检查并修正回复。不要添加任何解释、标记或额外内容。`
+    '你是严格的规则审核员。检查下面的回复是否违反了强制规则。如果有任何违反，必须彻底重写；如果完全合规，就原样输出。不要解释，只输出最终文本。\n\n【强制规则】\n' + (worldForceRequirements ? '世界书：' + worldForceRequirements + '\n' : '') + (characterForceRequirements ? '角色卡：' + characterForceRequirements + '\n' : '') + '\n【回复草稿】\n' + draftReply,
+    '你是严格的规则审核机器人。只检查和修正回复，不添加解释。'
   ));
 
   const finalReply = revisedReply || draftReply;
-
-  // Fire-and-forget memory extraction
-  extractMemoryFromConversation(characterId, userMessage, finalReply).catch(() => {});
-
-  // Fire-and-forget AI emotion scoring (Phase 3)
-  scoreConversationEmotion(characterId, userMessage, finalReply).catch(() => {});
-
   return finalReply;
 }
 
 // ── Phase 3: AI Emotion Scoring ──
-// AI selects the emotion word, dictionary provides the V/A coordinates.
-// Fusion: 70% dictionary + 30% AI self-assessment.
-// Anti-sycophancy: strict prompt requiring honest scoring.
 
-const SCORE_SYSTEM_PROMPT = `你是一个严格的对话情感评分员。你的任务是从角色的视角评估一段对话带来的情感变化。
-
-规则（必须严格遵守）：
-1. 使用 PANAS 双轴模型：PA（正向情感）和 NA（负向情感）是两个独立维度
-2. 冷场就是冷场（PA低、NA低），敷衍就是敷衍（PA低），不要美化
-3. 禁止正面偏移 —— 不是每段对话都让人开心，请诚实评分
-4. 输出必须是 JSON 格式，不要任何其他内容
-
-输出 JSON 字段：
-- pa_delta: 正向情感变化 (-0.3 ~ 0.5)，对话让角色感觉越好值越大
-- na_delta: 负向情感变化 (-0.3 ~ 0.5)，对话让角色越不安/难过值越大
-- valence: AI自评情感效价 (-1 ~ 1)，负=负面 正=正面
-- arousal: AI自评唤醒度 (0 ~ 1)，0=平静 1=强烈
-- word: 最贴切的情绪词（1-2个中文字）
-- backup: 另外3个备选情绪词（用于词典匹配兜底）
-- reason: 评分理由（一句话）`;
+const SCORE_SYSTEM_PROMPT = '你是一个严格的对话情感评分员。使用 PANAS 双轴模型评估对话对角色的情感影响。\n\n输出 JSON（不要其他内容）：\npa_delta (-0.3~0.5), na_delta (-0.3~0.5), valence (-1~1), arousal (0~1), word (情绪词), backup (3个备选), reason (一句话)';
 
 interface AIEmotionScore {
   pa_delta: number;
@@ -375,20 +359,15 @@ async function scoreConversationEmotion(
   characterReply: string,
 ): Promise<void> {
   const state = useAppStore.getState();
-  const charName = state.characters[characterId]?.name || characterId;
+  const char = state.characters[characterId];
+  const charName = char?.name || characterId;
 
   try {
-    const prompt = `评估以下对话对${charName}的情感影响。
-
-用户说：${userMessage}
-${charName}回复：${characterReply}
-
-请从${charName}的视角评估。`;
+    const prompt = '评估对话对' + charName + '的情感影响。\n关系：' + (char?.relationship || '朋友') + '，好感' + (char?.affection ?? 50) + '/100，性格：' + (char?.personality || '') + '\n\n用户：' + userMessage + '\n' + charName + '：' + characterReply + '\n\n视角：' + charName + '。注意：用户纠正事实错误时，角色应尴尬而非生气（na≤0.15，arousal≤0.3）。啦娇可微正面，指责/争吵实评负面。';
 
     const raw = await generateAIResponse(prompt, SCORE_SYSTEM_PROMPT);
     const parsed: AIEmotionScore = JSON.parse(raw.replace(/```json|```/g, '').trim());
 
-    // Sanitize
     const paDelta = Math.max(-0.3, Math.min(0.5, parsed.pa_delta ?? 0));
     const naDelta = Math.max(-0.3, Math.min(0.5, parsed.na_delta ?? 0));
     const aiValence = Math.max(-1, Math.min(1, parsed.valence ?? 0));
@@ -396,14 +375,11 @@ ${charName}回复：${characterReply}
     const word = (parsed.word || '平静').trim();
     const backups = (parsed.backup || []).filter((b): b is string => typeof b === 'string').map(b => b.trim());
 
-    // Look up dictionary V/A (multi-layer: word → backups → substring → free_form)
     const lookup = lookupEmotion(word, backups);
 
-    // Fusion: 70% dictionary anchors the direction, 30% AI provides scene variation
     const fusedValence = 0.7 * lookup.v + 0.3 * aiValence;
     const fusedArousal = 0.7 * lookup.a + 0.3 * aiArousal;
 
-    // Record emotion event
     state.addEmotionEvent({
       characterId,
       paDelta,
@@ -415,14 +391,8 @@ ${charName}回复：${characterReply}
       source: 'conversation',
     });
 
-    // Affection update: 0.6 × (pa - na) + 0.4 × dictionary V
-    const affectionChange = 0.6 * (paDelta - naDelta) + 0.4 * lookup.v;
-    const currentAffection = state.characters[characterId]?.affection ?? 50;
-    const newAffection = Math.max(0, Math.min(100, currentAffection + affectionChange * 10));
-    state.updateCharacter(characterId, { affection: Math.round(newAffection) });
-
   } catch {
-    // Silently fail — scoring is non-critical
+    // Silently fail
   }
 }
 
@@ -433,18 +403,17 @@ export async function sendCharacterActivityFollowup(characterId: string, topicPr
   if (!char) return;
 
   state.addActivityLog({
-    id: `${Date.now()}_${Math.random()}`,
+    id: Date.now().toString() + '_' + Math.random(),
     title: topicPrompt.replace(/请你.*$/, '').replace(/[。！!？?]/g, '').slice(0, 28).trim() || '最近活动',
     detail: topicPrompt.slice(0, 140),
     timestamp: Date.now(),
     relatedCharacterIds: [characterId]
   });
 
-  const prompt = `${topicPrompt}
-请你以 ${char.name} 的身份，给我发一条简短自然的微信消息，内容要和刚才的事情直接相关，像刚结束事情后主动来找我说话。不要使用括号、星号或 Markdown。`;
+  const sysMsg = `你是${char.name}。性格：${char.personality || '普通'}。和对方的关系：${char.relationship || '朋友'}（对方=${char.userNickname || '你'}，好感度${char.affection ?? 50}/100）。严禁动作描写、神态描写、心理描写。只说一句话，不加括号、引号、星号。直接以文字开头。`;
 
   try {
-    const reply = cleanAiText(await getCharacterReply(characterId, prompt));
+    const reply = cleanAiText(await generateAIResponse(topicPrompt, sysMsg));
     if (reply) {
       useAppStore.getState().receiveMessage(characterId, reply);
     }
@@ -455,11 +424,12 @@ export async function sendCharacterActivityFollowup(characterId: string, topicPr
 
 export async function textToSpeech(text: string, voiceId?: string): Promise<string> {
   const settings = useAppStore.getState().settings;
-  const groupId = settings.voiceApiGroupId;
-  const apiKey = settings.voiceApiKey;
-  const baseUrl = settings.voiceApiBaseUrl;
-  const model = settings.voiceTtsModel || 'speech-02';
-  const defaultVoiceId = settings.voiceApiVoiceId || 'female-shaonv';
+  const cfg = settings.voiceApiConfigs?.[0];
+  const groupId = cfg?.groupId || '';
+  const apiKey = cfg?.apiKey || '';
+  const baseUrl = cfg?.baseUrl || '';
+  const model = cfg?.ttsModel || 'speech-02';
+  const defaultVoiceId = cfg?.voiceId || 'female-shaonv';
 
   if (!groupId || !apiKey || !baseUrl) {
     throw new Error('语音API未配置');
@@ -471,16 +441,15 @@ export async function textToSpeech(text: string, voiceId?: string): Promise<stri
   try {
     let endpoint = baseUrl.trim();
     if (!endpoint.endsWith('/text_to_speech')) {
-      endpoint = `${endpoint.replace(/\/$/, '')}/text_to_speech`;
+      endpoint = endpoint.replace(/\/$/, '') + '/text_to_speech';
     }
-    // Add GroupId to URL
-    endpoint = `${endpoint}?GroupId=${groupId}`;
+    endpoint = endpoint + '?GroupId=' + groupId;
 
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': 'Bearer ' + apiKey
       },
       body: JSON.stringify({
         model,
@@ -494,7 +463,7 @@ export async function textToSpeech(text: string, voiceId?: string): Promise<stri
 
     if (!res.ok) {
       const errorData = await res.text();
-      throw new Error(`语音生成失败: ${res.status} - ${errorData}`);
+      throw new Error('语音生成失败: ' + res.status + ' - ' + errorData);
     }
 
     const blob = await res.blob();
@@ -508,9 +477,9 @@ export async function textToSpeech(text: string, voiceId?: string): Promise<stri
   }
 }
 
-export async function translateText(text: string, targetLang = '中文'): Promise<string> {
+export async function translateText(text: string, targetLang: string = '中文'): Promise<string> {
   try {
-    const prompt = `请将以下内容翻译成${targetLang}，只输出翻译结果，不要解释：\n\n${text}`;
+    const prompt = '请将以下内容翻译成' + targetLang + '，只输出翻译结果：\n\n' + text;
     return await generateAIResponse(prompt);
   } catch {
     return text;
@@ -519,9 +488,10 @@ export async function translateText(text: string, targetLang = '中文'): Promis
 
 export async function speechToText(audioBlob: Blob, language?: string): Promise<string> {
   const settings = useAppStore.getState().settings;
-  const apiKey = settings.voiceApiKey;
-  const baseUrl = settings.voiceApiBaseUrl;
-  const model = settings.voiceSttModel || 'whisper-1';
+  const cfg = settings.voiceApiConfigs?.[0];
+  const apiKey = cfg?.apiKey || '';
+  const baseUrl = cfg?.baseUrl || '';
+  const model = cfg?.sttModel || 'whisper-1';
 
   if (!apiKey || !baseUrl) {
     throw new Error('语音API未配置');
@@ -533,7 +503,7 @@ export async function speechToText(audioBlob: Blob, language?: string): Promise<
   try {
     let endpoint = baseUrl.trim();
     if (!endpoint.endsWith('/audio/transcriptions')) {
-      endpoint = `${endpoint.replace(/\/$/, '')}/audio/transcriptions`;
+      endpoint = endpoint.replace(/\/$/, '') + '/audio/transcriptions';
     }
 
     const formData = new FormData();
@@ -545,7 +515,7 @@ export async function speechToText(audioBlob: Blob, language?: string): Promise<
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': 'Bearer ' + apiKey
       },
       body: formData,
       signal: controller.signal
@@ -555,7 +525,7 @@ export async function speechToText(audioBlob: Blob, language?: string): Promise<
 
     if (!res.ok) {
       const errorData = await res.text();
-      throw new Error(`语音识别失败: ${res.status} - ${errorData}`);
+      throw new Error('语音识别失败: ' + res.status + ' - ' + errorData);
     }
 
     const data = await res.json();
@@ -574,45 +544,19 @@ export async function generateCharacterMoment(characterId: string): Promise<{ co
   const character = state.characters[characterId];
   const card = getCharacterCard(characterId);
   const settings = state.settings;
-  
+
   if (!character || !card) {
     throw new Error('角色不存在');
   }
 
-  const now = new Date();
-  const formattedTime = now.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
-
-  const prompt = `你现在扮演角色：${character.name}。
-你的性格：${card.personality || character.personality}
-你的经历：${card.experience || ''}
-你与用户的关系：${card.relationship || character.relationship}
-当前时间：${formattedTime}
-
-请以${character.name}的身份发一条朋友圈。要求：
-1. 内容要符合角色的性格和当前时间
-2. 可以是日常生活、心情、美食、风景、感悟等
-3. 内容要自然真实，像真人发的朋友圈
-4. 不要太长，1-3句话即可
-5. 可以选择性地添加一个位置（比如：咖啡厅、公园、家里、公司等）
-
-请直接输出朋友圈内容，格式如下：
-内容：[你的朋友圈内容]
-位置：[可选的位置]`;
+  const prompt = '你现在扮演角色：' + character.name + '。性格：' + (card.personality || character.personality) + '。经历：' + (card.experience || '') + '。关系：' + (card.relationship || character.relationship) + '。\n\n请以' + character.name + '的身份发一条朋友圈，内容符合性格和当前时间，1-3句话，可选地址。\n\n格式：\n内容：[...]\n位置：[...]';
 
   try {
     const response = await generateAIResponse(prompt);
     const lines = response.split('\n').filter(l => l.trim());
     let content = '';
     let location = '';
-    
+
     for (const line of lines) {
       if (line.startsWith('内容：') || line.startsWith('内容:')) {
         content = line.replace(/^内容[：:]/, '').trim();
@@ -620,11 +564,11 @@ export async function generateCharacterMoment(characterId: string): Promise<{ co
         location = line.replace(/^位置[：:]/, '').trim();
       }
     }
-    
+
     if (!content) {
       content = response.trim();
     }
-    
+
     return { content, location: location || undefined };
   } catch (error) {
     throw new Error('生成朋友圈失败');
@@ -635,28 +579,82 @@ export async function generateMomentReply(characterId: string, momentContent: st
   const state = useAppStore.getState();
   const character = state.characters[characterId];
   const card = getCharacterCard(characterId);
-  
+
   if (!character || !card) {
     throw new Error('角色不存在');
   }
 
-  const prompt = `你现在扮演角色：${character.name}。
-你的性格：${card.personality || character.personality}
-你与用户的关系：${card.relationship || character.relationship}
-
-你发了一条朋友圈：${momentContent}
-
-用户评论了你的朋友圈：${commentText}
-
-请以${character.name}的身份回复这条评论。要求：
-1. 回复要符合角色性格
-2. 简短自然，像真人回复朋友圈评论
-3. 只输出回复内容，不要其他内容`;
+  const prompt = '角色：' + character.name + '，性格：' + (card.personality || character.personality) + '，关系：' + (card.relationship || character.relationship) + '。\n\n你发了朋友圈：' + momentContent + '\n' + '用户评论：' + commentText + '\n\n请以角色身份回复这条评论，符合性格，简短自然，只输出回复内容。';
 
   try {
     const response = await generateAIResponse(prompt);
     return response.trim();
   } catch (error) {
     throw new Error('生成回复失败');
+  }
+}
+
+// ── AI-Powered Daily Event Generation ──
+// Replaces the old hardcoded MOOD_POOLS with dynamically generated events.
+// Each character gets 3-5 unique events per day that match their personality
+// and life situation. Events have valence/arousal coordinates that feed into
+// the PANAS mood system.
+
+interface DailyEvent {
+  word: string;        // event description, e.g. "在天台上吹风" / "破获一起毒品交易"
+  feelingWord: string; // emotional response, e.g. "放松" / "愤怒"
+  valence: number;     // 0~1, how positive/negative
+  arousal: number;     // 0~1, how intense
+}
+
+export async function generateDailyEvents(characterId: string): Promise<void> {
+  const state = useAppStore.getState();
+  const character = state.characters[characterId];
+  if (!character) return;
+
+  // 每次只生成一条，随机间隔分散到一天中
+  if (!canGenerateDailyEvent(characterId)) return;
+
+  // Get richer character info from world settings (may contain biography)
+  const card = getCharacterCard(characterId);
+  const fullBio = card?.biography || character.biography || '';
+  const fullExp = card?.experience || character.experience || '';
+  const fullPersonality = card?.personality || character.personality || '';
+
+  const charPrompt = `角色：${character.name}
+设定概要：${fullBio || '无'}
+性格：${fullPersonality || '普通'}
+经历：${fullExp || '无'}
+身份：${character.relationship || '朋友'}
+好感度：${character.affection ?? 50}/100
+
+生成一条该角色今天正在做的日常活动。
+
+要求：
+- 必须是一句话：角色正在做什么，以及当前感受（如"在蝙蝠洞训练，出了一身汗"）
+- 要符合角色性格和身份
+- 不要和已经生成过的重复
+- 返回 JSON 格式：{"word":"在做什么","feelingWord":"当前感受","valence":0~1,"arousal":0~1}`;
+
+  try {
+    const raw = await generateAIResponse(charPrompt);
+    const ev: DailyEvent = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
+    if (!ev || !ev.word) return;
+
+    const valence = Math.max(0, Math.min(1, ev.valence ?? 0.5));
+    const arousal = Math.max(0, Math.min(1, ev.arousal ?? 0.3));
+    writeDecorationMoodToMemory(
+      characterId,
+      ev.word || '度过了普通的一天',
+      ev.feelingWord || '平静',
+      valence,
+      arousal,
+    );
+
+    // 记录本次生成时间，用于随机间隔
+    markDailyEventGenerated(characterId);
+  } catch {
+    // AI failed — silently skip, will retry on next interaction
   }
 }

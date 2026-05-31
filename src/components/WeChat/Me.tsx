@@ -37,7 +37,7 @@ export default function Me() {
   if (activeView === 'profile') {
     return (
       <div className="h-full flex flex-col bg-gray-100 dark:bg-black">
-        <div className="bg-white dark:bg-black dark:text-white px-4 pt-12 pb-3 flex items-center justify-between border-b dark:border-white/5">
+        <div className="bg-white dark:bg-black dark:text-white px-4 pt-7 pb-3 flex items-center justify-between border-b dark:border-white/5">
           <button onClick={() => setActiveView('main')} className="text-gray-600 dark:text-gray-300">取消</button>
           <h1 className="text-lg font-medium">个人信息</h1>
           <button onClick={handleSaveProfile} className="text-[#07c160]">保存</button>
@@ -114,7 +114,7 @@ export default function Me() {
     const myMoments = moments.filter(m => m.authorId === 'user');
     return (
       <div className="h-full flex flex-col bg-white dark:bg-black transition-colors">
-        <div className="bg-gray-100 dark:bg-[#191919] px-4 pt-12 pb-3 flex items-center justify-between border-b dark:border-white/5">
+        <div className="bg-gray-100 dark:bg-[#191919] px-4 pt-7 pb-3 flex items-center justify-between border-b dark:border-white/5">
           <button onClick={() => setActiveView('main')} className="text-gray-600 dark:text-gray-300">返回</button>
           <h1 className="text-lg font-medium dark:text-gray-100">我的朋友圈</h1>
           <div className="w-8"></div>
@@ -243,7 +243,7 @@ export default function Me() {
       <div className="bg-white dark:bg-black pt-16 pb-8 px-6 flex items-center gap-4 mb-2 cursor-pointer" onClick={() => setActiveView('profile')}>
         <div 
           className="w-16 h-16 rounded-lg bg-cover bg-center"
-          style={{ backgroundImage: settings.wechatAvatar && !settings.wechatAvatar.startsWith('#') ? `url(${settings.wechatAvatar})` : 'none', backgroundColor: settings.wechatAvatar.startsWith('#') ? settings.wechatAvatar : '#ffffff' }}
+          style={{ backgroundImage: settings.wechatAvatar && !settings.wechatAvatar.startsWith('#') ? `url(${settings.wechatAvatar})` : 'none', backgroundColor: settings.wechatAvatar?.startsWith('#') ? settings.wechatAvatar : '#ffffff' }}
         />
         <div className="flex-1">
           <div className="text-xl font-medium mb-1 dark:text-gray-100">{settings.wechatName}</div>

@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { ChevronLeft, Trash2, X, Upload, Star, Camera, Mic, Brain, Heart, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { ChevronLeft, Trash2, X, Upload, Star, Camera, Mic, AlertCircle } from 'lucide-react';
 import { useAppStore } from '../../store';
-import { scoreMemory } from '../../lib/characterMemory';
+import { generateAIResponse } from '../../lib/ai';
+import { CharacterCard } from '../../types';
 import ImageUploader from '../ImageUploader';
 
 const ConfirmModal = ({ 
@@ -66,12 +67,7 @@ export default function CharacterSettings({
   const updateCharacter = useAppStore(s => s.updateCharacter);
   const deleteChat = useAppStore(s => s.deleteChat);
   const removeCharacter = useAppStore(s => s.removeCharacter);
-  const characterMemoryBank = useAppStore(s => s.characterMemoryBank[characterId] || []);
-  const addCharacterMemory = useAppStore(s => s.addCharacterMemory);
-  const deleteCharacterMemory = useAppStore(s => s.deleteCharacterMemory);
-  const [showMemoryManager, setShowMemoryManager] = useState(false);
-  const [newMemoryText, setNewMemoryText] = useState('');
-  const [memoryFilter, setMemoryFilter] = useState<string>('all');
+  const clearCharacterMemories = useAppStore(s => s.clearCharacterMemories);
 
   const [localChar, setLocalChar] = useState(character);
   const [showClearModal, setShowClearModal] = useState(false);
@@ -87,6 +83,7 @@ export default function CharacterSettings({
 
   const handleClearChat = () => {
     deleteChat(characterId);
+    clearCharacterMemories(characterId);
     onBack();
   };
 
@@ -95,145 +92,76 @@ export default function CharacterSettings({
     onBack();
   };
 
-  const handleRemoveFriend = () => {
-    removeCharacter(characterId);
+  const handleRemoveFriend = async () => {
+    const store = useAppStore.getState();
+    const recentChats = store.chats[characterId] || [];
+    const recentContext = recentChats.slice(-8).map(m => {
+      const sender = m.senderId === 'user' ? '你' : character.name;
+      return `${sender}: ${m.text}`;
+    }).join('\n');
+    const lastMsg = recentChats[recentChats.length - 1];
+    const recentlyActive = lastMsg && (Date.now() - lastMsg.timestamp) < 30 * 60 * 1000;
+
+    // Mark as not a friend and clear chat
+    deleteChat(characterId);
+
+    if (recentlyActive && recentContext) {
+      // ── Immediate re-add（聊天中删除，角色立刻发现）──
+      updateCharacter(characterId, { isWeChatFriend: false });
+
+      try {
+        const reasonPrompt = `以下是我们最近的对话：\n${recentContext}\n\n用户突然删除了你的微信好友。分析对话内容判断你们是否发生过争吵。如果是在争吵，生成一句道歉/挽留的消息。如果没有争吵（看起来很正常），生成一句困惑/询问的消息（例如"怎么把我删了？"）。直接输出消息内容，不要任何前缀，不要括号动作描写。`;
+
+        const reason = (await generateAIResponse(
+          `你正在扮演${character.name}。性格：${character.personality}。\n${reasonPrompt}`
+        )).trim();
+
+        const card: CharacterCard = {
+          id: characterId,
+          name: character.name,
+          avatar: character.avatar,
+          personality: character.personality || '',
+          experience: character.experience || '',
+          relationship: character.relationship || '朋友',
+          viewOnMe: character.viewOnMe || '',
+        };
+
+        store.addFriendRequest(card, reason || `${character.name}请求添加你为朋友`);
+
+        store.setNotification({
+          id: Date.now(),
+          title: character.name,
+          text: reason || `${character.name}请求添加你为朋友`,
+          sourceApp: 'wechat',
+          openApp: 'wechat',
+          characterId,
+        });
+      } catch {
+        // Silent fail
+      }
+    } else {
+      // ── Delayed re-add（没在聊天，角色以后才会发现）──
+      updateCharacter(characterId, {
+        isWeChatFriend: false,
+        pendingReAddAt: Date.now() + 3 * 60 * 1000 + Math.random() * 7 * 60 * 1000, // 3-10 分钟后
+        pendingReAddContext: recentContext || '',
+      });
+    }
+
     onBack();
   };
 
   const isDark = settings.wechatTheme === 'dark';
 
-  const scoredMemories = useMemo(() =>
-    characterMemoryBank.map(m => ({ entry: m, score: scoreMemory(m) })).sort((a, b) => b.score - a.score),
-  [characterMemoryBank]);
-
-  const filteredMemories = useMemo(() => {
-    if (memoryFilter === 'all') return scoredMemories;
-    return scoredMemories.filter(({ entry }) => entry.type === memoryFilter);
-  }, [scoredMemories, memoryFilter]);
-
   return (
     <div className={`h-full flex flex-col ${isDark ? 'bg-black' : 'bg-gray-100'}`}>
-      {showMemoryManager && (
-        <div className="absolute inset-0 z-50 flex flex-col bg-black/60 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#1a1a1a] px-4 pt-12 pb-4 flex items-center justify-between border-b border-gray-200 dark:border-white/10 shrink-0">
-            <button onClick={() => { setShowMemoryManager(false); setNewMemoryText(''); }} className="text-gray-500 p-1">
-              <ChevronLeft size={24} />
-            </button>
-            <h1 className="text-lg font-bold text-gray-800 dark:text-white">记忆库</h1>
-            <div className="w-8" />
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {/* Add memory */}
-            <div className="bg-gray-50 dark:bg-white/5 rounded-xl p-3 space-y-2">
-              <textarea
-                value={newMemoryText}
-                onChange={e => setNewMemoryText(e.target.value)}
-                placeholder="添加一条新记忆...（如：用户喜欢吃辣）"
-                className="w-full bg-white dark:bg-white/10 border border-gray-200 dark:border-white/10 rounded-lg p-3 text-sm text-gray-700 dark:text-gray-200 outline-none resize-none"
-                rows={2}
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    if (!newMemoryText.trim()) return;
-                    addCharacterMemory(characterId, {
-                      type: 'fact',
-                      content: newMemoryText.trim(),
-                      summary: newMemoryText.trim().slice(0, 80),
-                      tags: [],
-                      valence: 0.5,
-                      arousal: 0.5,
-                      importance: 5,
-                    });
-                    setNewMemoryText('');
-                  }}
-                  disabled={!newMemoryText.trim()}
-                  className="flex-1 py-2 rounded-lg bg-purple-500 text-white text-sm font-medium disabled:opacity-40"
-                >
-                  添加记忆
-                </button>
-              </div>
-            </div>
-
-            {/* Filter tabs */}
-            <div className="flex gap-2 text-xs">
-              {['all', 'fact', 'observation', 'conversation', 'event', 'preference'].map(t => (
-                <button
-                  key={t}
-                  onClick={() => setMemoryFilter(t)}
-                  className={`px-3 py-1.5 rounded-full transition-colors ${
-                    memoryFilter === t
-                      ? 'bg-purple-500 text-white'
-                      : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-400'
-                  }`}
-                >
-                  {t === 'all' ? '全部' : t === 'fact' ? '事实' : t === 'observation' ? '观察' : t === 'conversation' ? '对话' : t === 'event' ? '事件' : '偏好'}
-                </button>
-              ))}
-            </div>
-
-            {/* Memory list */}
-            {filteredMemories.length === 0 ? (
-              <div className="text-center py-16">
-                <Brain size={48} className="mx-auto mb-3 text-gray-300" />
-                <p className="text-sm text-gray-400">暂无记忆</p>
-                <p className="text-xs text-gray-300 mt-1">角色会自动记录与你的互动</p>
-              </div>
-            ) : (
-              filteredMemories.map(({ entry, score }) => (
-                <div key={entry.id} className="bg-white dark:bg-white/5 border border-gray-100 dark:border-white/10 rounded-xl p-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-gray-700 dark:text-gray-200">{entry.summary}</div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                          entry.type === 'fact' ? 'bg-blue-100 text-blue-600' :
-                          entry.type === 'observation' ? 'bg-green-100 text-green-600' :
-                          entry.type === 'event' ? 'bg-orange-100 text-orange-600' :
-                          entry.type === 'preference' ? 'bg-pink-100 text-pink-600' :
-                          'bg-gray-100 text-gray-500'
-                        }`}>{entry.type === 'fact' ? '事实' : entry.type === 'observation' ? '观察' : entry.type === 'event' ? '事件' : entry.type === 'preference' ? '偏好' : '对话'}</span>
-                        <span className="text-[10px] text-gray-400">重要性 {entry.importance}</span>
-                        <span className="text-[10px] text-gray-400">得分 {score.toFixed(1)}</span>
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        {/* Valence bar */}
-                        <div className="flex items-center gap-1">
-                          <Heart size={10} className={entry.valence > 0.6 ? 'text-red-400' : entry.valence < 0.4 ? 'text-gray-400' : 'text-gray-300'} />
-                          <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full transition-all" style={{
-                              width: `${entry.valence * 100}%`,
-                              backgroundColor: entry.valence > 0.6 ? '#f87171' : entry.valence < 0.4 ? '#9ca3af' : '#d1d5db'
-                            }} />
-                          </div>
-                        </div>
-                        <span className="text-[10px] text-gray-400">
-                          {new Date(entry.createdAt).toLocaleDateString()}
-                        </span>
-                        <span className="text-[10px] text-gray-300">{entry.accessCount}次访问</span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => deleteCharacterMemory(characterId, entry.id)}
-                      className="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 text-gray-400 hover:text-red-500 transition-colors shrink-0"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
 
       <ConfirmModal
         isOpen={showClearModal}
         onClose={() => setShowClearModal(false)}
         onConfirm={handleClearChat}
         title="清空聊天记录"
-        message="确定要清空聊天记录吗？这将同时清除世界书角色卡中关于微信聊天的记忆。"
+        message="确定要清空聊天记录吗？这将同时清除记忆库中该角色的全部记忆，情绪将恢复平静。"
         confirmText="清空"
         isDark={isDark}
       />
@@ -258,7 +186,7 @@ export default function CharacterSettings({
         isDark={isDark}
       />
 
-      <div className={`${isDark ? 'bg-[#1a1a1a]' : 'bg-white'} px-4 pt-12 pb-4 flex items-center justify-between border-b ${isDark ? 'border-white/5' : ''} shrink-0`}>
+      <div className={`${isDark ? 'bg-[#1a1a1a]' : 'bg-white'} px-4 pt-7 pb-4 flex items-center justify-between border-b ${isDark ? 'border-white/5' : ''} shrink-0`}>
         <button onClick={onBack} className="w-8 h-8 flex items-center -ml-2 text-gray-500">
           <ChevronLeft size={24} />
         </button>
@@ -275,7 +203,7 @@ export default function CharacterSettings({
             <div 
               className="w-20 h-20 rounded-lg flex-shrink-0"
               style={{ 
-                background: character.avatar.startsWith('#') ? character.avatar : `url(${character.avatar}) center/cover` 
+                background: character.avatar?.startsWith('#') ? character.avatar : `url(${character.avatar || ''}) center/cover`
               }}
             />
             <div className="flex-1">
@@ -464,16 +392,54 @@ export default function CharacterSettings({
 
         <div className={`rounded-2xl p-4 shadow-sm space-y-3 ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
           <button
-            onClick={() => setShowMemoryManager(true)}
-            className={`w-full p-4 rounded-xl flex items-center gap-3 transition-colors ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}
+            onClick={() => {
+              const newValue = !localChar.shareEnabled;
+              setLocalChar(prev => ({ ...prev, shareEnabled: newValue }));
+              updateCharacter(characterId, { shareEnabled: newValue });
+            }}
+            className={`w-full flex items-center justify-between py-3 px-4 rounded-xl transition-colors ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}
           >
-            <Brain size={18} className="text-purple-500" />
-            <div className="text-left">
-              <div className={`text-sm font-medium ${isDark ? 'text-gray-200' : 'text-slate-700'}`}>角色记忆库 ({characterMemoryBank.length})</div>
-              <div className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>管理 {character?.name} 对你的记忆</div>
+            <div className="flex items-center gap-3">
+              <Upload size={18} className={localChar.shareEnabled ? 'text-purple-500' : isDark ? 'text-gray-500' : 'text-gray-400'} />
+              <span className={`text-sm font-medium ${isDark ? 'text-gray-300' : 'text-slate-700'}`}>主动分享</span>
+            </div>
+            <div className={`w-10 h-6 rounded-full transition-colors ${localChar.shareEnabled ? 'bg-[#07c160]' : isDark ? 'bg-white/10' : 'bg-gray-300'}`}>
+              <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${localChar.shareEnabled ? 'translate-x-4' : ''}`} />
             </div>
           </button>
 
+          {localChar.shareEnabled && (
+            <div className={`py-2.5 px-4 rounded-xl ${isDark ? 'bg-white/5' : 'bg-gray-50'}`}>
+              <div className="flex items-center justify-between">
+                <span className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>每天分享频率</span>
+                <select
+                  value={localChar.shareFrequency || 2}
+                  onChange={(e) => {
+                    const num = parseInt(e.target.value);
+                    setLocalChar(prev => ({ ...prev, shareFrequency: num }));
+                    updateCharacter(characterId, { shareFrequency: num });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-sm outline-none ${
+                    isDark
+                      ? 'bg-[#2c2c2c] text-gray-200 border-white/10'
+                      : 'bg-white text-slate-700 border-gray-200'
+                  } border`}
+                >
+                  <option value={1}>1次/天</option>
+                  <option value={2}>2次/天</option>
+                  <option value={3}>3次/天</option>
+                  <option value={4}>4次/天</option>
+                  <option value={5}>5次/天</option>
+                </select>
+              </div>
+              <div className={`mt-2 text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                开启后，角色会主动分享有趣的内容给你。如果两人吵架，频率会自动降低。
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className={`rounded-2xl p-4 shadow-sm space-y-3 ${isDark ? 'bg-[#1a1a1a]' : 'bg-white'}`}>
           <button
             onClick={() => setShowDeleteModal(true)}
             className={`w-full p-4 rounded-xl flex items-center gap-3 transition-colors ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}
@@ -484,7 +450,7 @@ export default function CharacterSettings({
               <div className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>仅清除聊天记录，不影响角色记忆</div>
             </div>
           </button>
-          
+
           <button
             onClick={() => setShowClearModal(true)}
             className={`w-full p-4 rounded-xl flex items-center gap-3 transition-colors ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}
@@ -492,7 +458,7 @@ export default function CharacterSettings({
             <Trash2 size={18} className="text-red-500" />
             <div className="text-left">
               <div className={`text-sm font-medium text-red-500`}>清空聊天记录</div>
-              <div className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>清除所有聊天记录和角色记忆</div>
+              <div className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>清除聊天记录、记忆库和情绪状态</div>
             </div>
           </button>
         </div>

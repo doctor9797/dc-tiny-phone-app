@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, MoreHorizontal, Smile, Plus, UserPlus, FileText, Image as ImageIcon, Trash2, Send } from 'lucide-react';
 import { generateAIResponse } from '../../lib/ai';
+import { getTopMemoriesForPrompt } from '../../lib/characterMemory';
+import { getCurrentMood, buildMoodPrompt } from '../../lib/moodLoop';
 import { ChatGroup, Message } from '../../types';
 import ImageUploader from '../ImageUploader';
 import { format } from 'date-fns';
@@ -127,27 +129,78 @@ export default function GroupChatRoom({ groupId, onBack }: { groupId: string; on
               return `${sName}: ${m.text}`;
            }).join('\n');
            
-           const worldSettings = useAppStore.getState().worldSettings.map(ws => `${ws.title}: ${ws.content}\n${ws.baseCode ? `[底层代码/强制执行]: ${ws.baseCode}` : ''}`).join('\n\n');
-           const charCard = useAppStore.getState().worldSettings.flatMap(ws => ws.characters).find(c => c.id === mId);
-           const forceRequirements = [worldSettings, charCard?.forceRequirements ? `[角色卡强制要求]: ${charCard.forceRequirements}` : ''].filter(Boolean).join('\n');
+           const gState = useAppStore.getState();
+           const currentMood = getCurrentMood(mId);
+           const moodPrompt = buildMoodPrompt(currentMood);
+
+           const relevantWorld = gState.worldSettings.find(ws =>
+             ws.characters.some(c => c.id === mId)
+           );
+           const worldContext = relevantWorld
+             ? relevantWorld.title + ': ' + relevantWorld.content
+             : '';
+
+           let card = null;
+           for (const ws of gState.worldSettings) {
+             const found = ws.characters.find(c => c.id === mId);
+             if (found) { card = found; break; }
+           }
+
+           const trunc = (s: string, n: number) => s.length > n ? s.slice(0, n) + '...' : s;
+           const personality = trunc(card?.personality || char.personality || '', 200);
+           const experience = trunc(card?.experience || char.experience || '', 200);
+           const biography = trunc(card?.biography || char.biography || '', 300);
+           const relationship = trunc(card?.relationship || char.relationship || '', 200);
+           const viewOnMe = trunc(card?.viewOnMe || char.viewOnMe || '', 200);
+           const ff = (v?: string) => (v || '').split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+           const characterForceRequirements = ff(card?.forceRequirements);
+           const worldForceRequirements = relevantWorld ? ff(relevantWorld.baseCode) : '';
+           const characterMemories = getTopMemoriesForPrompt(mId, 300);
+           const latestNewsIssue = (gState.newsIssues || [])[0];
+           const newsContext = latestNewsIssue
+             ? '【新闻】' + latestNewsIssue.articles.slice(0, 2).map(a => a.title).join('、')
+             : '';
            
+           // ── System instruction (same structure as getCharacterReply) ──
+           const sysParts: string[] = [
+             '角色：' + char.name + '。',
+           ];
+           if (worldContext) sysParts.push('世界观：' + worldContext);
+           if (personality) sysParts.push('性格：' + personality + '。');
+           if (experience) sysParts.push('经历：' + experience + '。');
+           if (biography) sysParts.push('档案：' + biography + '。');
+           sysParts.push('关系：' + relationship + '（你=' + (char.userNickname || '你') + '，好感' + (char.affection ?? 50) + '/100）。');
+           if (viewOnMe) sysParts.push('对你的看法：' + viewOnMe);
+           if (characterMemories) sysParts.push('记忆：\n' + characterMemories + '\n（不记得说不知道）');
+           if (newsContext) sysParts.push(newsContext);
+           sysParts.push('我们在一个名为【' + group.name + '】的微信群聊中。群成员有：' + group.members.map(x => x === 'user' ? '(用户)我' : characters[x]?.name).join('、') + '。');
+           sysParts.push('风格：纯文字微信聊天，严禁动作/神态/心理描写。消息前无角色名/冒号/括号/星号，直接以文字开头。2-4条用\\n\\n分隔。严禁第四面墙——你就是角色本人，不是AI，不提扮演/模型/设定。如果是群聊里的回复可适当简短。你可以给"我"（用户）[转账] 或 [礼物]。');
+           if (settings.bilingual) sysParts.push('双语：先中后英。');
+           sysParts.push(moodPrompt);
+           if (worldForceRequirements) sysParts.push('强制：' + worldForceRequirements);
+           if (characterForceRequirements) sysParts.push('强制：' + characterForceRequirements);
+           const systemInstruction = sysParts.join('\n');
+
+           // ── User prompt ──
            let promptSuffix = '';
            if (isMentioned) {
-             promptSuffix = `\n\n【强制要求】你刚才被@了！这是对你的直接呼叫，你必须回复！即使你想跳过也绝对不允许！必须输出你的回复内容，禁止回复"SKIP"。`;
+             promptSuffix = '\n\n【强制要求】你刚才被@了！这是对你的直接呼叫，你必须回复！即使你想跳过也绝对不允许！必须输出你的回复内容，禁止回复"SKIP"。';
            } else {
-             promptSuffix = `\n\n如果对这个话题不感兴趣，可以回复"SKIP"。`;
+             promptSuffix = '\n\n如果对这个话题不感兴趣，可以回复"SKIP"。';
            }
-           
-           const prompt = `世界观设定：\n${worldSettings}\n\n我们在一个名为【${group.name}】的微信群聊中。\n群成员有: ${group.members.map(x=> x==='user'?'(用户)我':characters[x]?.name).join(',')}。\n你是 ${char.name} (${char.personality})。\n这是最近的聊天记录:\n${recentMsgs}\n\n刚才有新消息。你需要决定是否回复。如果你被@了，一定要回复！如果你觉得话题与你有关，也可以回复。如果没有被@且不感兴趣，请回复 "SKIP"。如果回复，请只直接输出你的回复内容（不带名字前缀）。如果是群聊里的回复可适当简短。\n【重要限制】：请保持真活人语气，禁止任何括号动作描写、神态描写心理描写或旁白段落，禁止油腻语气。如果内容较多请用两个换行符 \\n\\n 分隔成多条短消息。你可以给"我"（用户）[转账] 或 [礼物]。\n【强制执行规则】\n${forceRequirements || '暂无'}\n在输出前，必须检查自己是否符合这些强制执行规则。${promptSuffix}`;
+
+           const prompt = (recentMsgs ? '【最近】\n' + recentMsgs + '\n\n' : '')
+             + '刚才有新消息。'
+             + promptSuffix;
            
            try {
-              let res = await generateAIResponse(prompt);
+              let res = await generateAIResponse(prompt, systemInstruction);
               if (isMentioned) {
                 let retries = 0;
                 while ((res.includes('SKIP') || res.trim().length === 0) && retries < 3) {
                   await new Promise(r => setTimeout(r, 1000));
-                  const retryPrompt = `【紧急】你是 ${char.name}，你刚才被用户在群里@了！这是直接呼叫你，你必须回复！绝对不能回复SKIP！请立即输出你的回复内容，只输出回复文字，不要任何前缀。`;
-                  res = await generateAIResponse(retryPrompt);
+                  const retryPrompt = '【紧急】你刚才被用户在群里被@了！这是直接呼叫你，你必须回复！绝对不能回复SKIP！请立即输出你的回复内容。';
+                  res = await generateAIResponse(retryPrompt, systemInstruction);
                   retries++;
                 }
               }

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, Save, ChevronRight, Palette, Plus, Trash2, User } from 'lucide-react';
 import ImageUploader from '../ImageUploader';
 import { VoiceApiConfig } from '../../types';
+import { injectFont, saveFontData, removeInjectedFont } from '../../lib/fontStorage';
 
-type ViewMode = 'main' | 'api' | 'persona' | 'personalize' | 'appnames' | 'icons' | 'theme';
+type ViewMode = 'main' | 'api' | 'persona' | 'personalize' | 'appnames' | 'icons' | 'theme' | 'fullscreen';
 
 const THEMES = [
   { id: 'cyan', name: '浅蓝', bg: 'bg-sky-100' },
@@ -20,16 +21,29 @@ const THEMES = [
 export default function SettingsApp() {
   const { settings, updateSettings, closeApp, characters } = useAppStore();
   const [localSettings, setLocalSettings] = useState(settings);
+  const [fontError, setFontError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>('main');
+  const [fs, setFs] = useState(false);
+
+  const [savedToast, setSavedToast] = useState(false);
+
+  useEffect(() => {
+    setFs(!!document.fullscreenElement);
+    const handler = () => setFs(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
 
   const handleSave = () => {
     updateSettings(localSettings);
-    alert('保存成功');
+    setSavedToast(true);
+    setTimeout(() => setSavedToast(false), 1500);
     if (view !== 'main') setView('main');
   };
 
   const renderHeader = (title: string, backToMain = true) => (
-    <div className="bg-white px-4 pt-12 pb-4 flex items-center justify-between border-b shrink-0 z-10 transition-colors">
+    <>
+    <div className="bg-white px-4 pt-7 pb-4 flex items-center justify-between border-b shrink-0 z-10 transition-colors">
       {backToMain ? (
         <button onClick={() => setView('main')} className="w-8 h-8 flex items-center -ml-2 text-slate-500"><ChevronLeft size={24} /></button>
       ) : (
@@ -38,6 +52,12 @@ export default function SettingsApp() {
       <h1 className="text-lg font-bold text-slate-800">{title}</h1>
       <button onClick={handleSave} className="p-2 -mr-2 text-blue-500 font-bold">保存</button>
     </div>
+    {savedToast && (
+      <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-black/80 text-white text-sm px-5 py-2 rounded-full z-[9999] animate-fade-in pointer-events-none">
+        保存成功
+      </div>
+    )}
+    </>
   );
 
   const renderMenuButton = (label: string, icon: React.ReactNode, target: ViewMode) => (
@@ -74,6 +94,8 @@ export default function SettingsApp() {
             {renderMenuButton('重新命名应用', <span className="font-bold text-xs">A/B</span>, 'appnames')}
             <div className="h-px bg-slate-50 ml-[60px]" />
             {renderMenuButton('自定义应用图标', <span className="font-bold text-xs">ICO</span>, 'icons')}
+            <div className="h-px bg-slate-50 ml-[60px]" />
+            {renderMenuButton('全屏显示', <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>, 'fullscreen')}
           </div>
         </div>
       </div>
@@ -300,6 +322,7 @@ export default function SettingsApp() {
                 </div>
               )}
             </div>
+
          </div>
        </div>
      );
@@ -337,19 +360,20 @@ export default function SettingsApp() {
          {renderHeader('我的设定')}
          <div className="flex-1 p-4 space-y-4 overflow-y-auto">
             <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
-              {['name', 'age', 'profession', 'identity', 'appearance', 'experience'].map((key) => (
+              {['name', 'age', 'birthDate', 'profession', 'identity', 'appearance', 'experience'].map((key) => (
                 <div key={key}>
                   <label className="block text-sm font-bold text-slate-700 mb-1">
-                    {key === 'name' ? '名字' : key === 'age' ? '年龄' : key === 'profession' ? '职业' : key === 'identity' ? '身份' : key === 'appearance' ? '外貌' : '经历'}
+                    {key === 'name' ? '名字' : key === 'age' ? '年龄' : key === 'birthDate' ? '出生日期' : key === 'profession' ? '职业' : key === 'identity' ? '身份' : key === 'appearance' ? '外貌' : '经历'}
                   </label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={(localSettings.persona as any)[key]}
                     onChange={e => setLocalSettings({
-                      ...localSettings, 
+                      ...localSettings,
                       persona: { ...localSettings.persona, [key]: e.target.value }
                     })}
                     className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-blue-500 bg-slate-50 focus:bg-white transition-colors"
+                    placeholder={key === 'birthDate' ? 'YYYY-MM-DD' : ''}
                   />
                 </div>
               ))}
@@ -430,6 +454,85 @@ export default function SettingsApp() {
                   className="w-full border border-slate-200 rounded-xl p-3 text-sm outline-none focus:border-blue-500 bg-slate-50 focus:bg-white"
                 />
               </div>
+              <div className="border-t border-slate-100 pt-4 mt-4">
+                <label className="block text-sm font-bold text-slate-700 mb-2">自定义全局字体</label>
+                <p className="text-xs text-slate-400 mb-3">支持 TTF、WOFF、WOFF2、OTF 格式。上传后整个界面字体都会改变（已设特殊字体的地方除外）。</p>
+                {localSettings.customFontName ? (
+                  <div className="bg-slate-50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">🔤</span>
+                        <span className="font-medium text-slate-700">{localSettings.customFontName || '自定义字体'}</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await removeInjectedFont(localSettings.customFontName);
+                          setLocalSettings({...localSettings, customFontData: undefined, customFontName: undefined});
+                        }}
+                        className="px-4 py-1.5 bg-red-500 text-white text-sm rounded-lg font-medium"
+                      >
+                        移除
+                      </button>
+                    </div>
+                    <div className="text-xs text-slate-400 bg-white rounded-lg p-3 border border-slate-200 break-all line-clamp-2">
+                      {localSettings.customFontName || '已加载字体'}
+                    </div>
+                    <p className="text-sm text-green-600 font-medium flex items-center gap-1">
+                      <span>✓</span> 字体已加载
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                  <label htmlFor="font-file-input" className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-300 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors">
+                    <span className="text-2xl mb-1">📁</span>
+                    <span className="text-sm text-slate-500">点击选择字体文件</span>
+                    <input
+                      id="font-file-input"
+                      type="file"
+                      accept=".ttf,.woff,.woff2,.otf"
+                      className="hidden"
+                      onChange={e => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setFontError(null);
+                        if (file.size > 50 * 1024 * 1024) {
+                          setFontError('字体文件太大，请选择 50MB 以内的文件');
+                          e.target.value = '';
+                          return;
+                        }
+                        const name = file.name;
+                        const reader = new FileReader();
+                        reader.onload = async (ev) => {
+                          const arrayBuffer = ev.target?.result as ArrayBuffer;
+                          if (!arrayBuffer) {
+                            setFontError('读取字体文件失败');
+                            return;
+                          }
+                          try {
+                            // 直接注入 ArrayBuffer（FontFace API 原生支持，无 URL 长度问题）
+                            await injectFont(name, arrayBuffer);
+                            // 保存原始数据到 IndexedDB（无 base64 开销）
+                            await saveFontData(name, arrayBuffer);
+                            setLocalSettings({...localSettings, customFontName: name, customFontData: undefined});
+                          } catch (err) {
+                            console.error('[Font] error:', err);
+                            setFontError('应用字体失败，请重试');
+                          }
+                        };
+                        reader.onerror = () => {
+                          setFontError('读取字体文件失败，请重试');
+                        };
+                        reader.readAsArrayBuffer(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  {fontError && (
+                    <p className="text-sm text-red-500 mt-1">{fontError}</p>
+                  )}
+                  </>
+                )}
+              </div>
             </div>
          </div>
        </div>
@@ -457,9 +560,15 @@ export default function SettingsApp() {
     { id: 'desktoppet', defaultName: '桌宠' },
     { id: 'writing', defaultName: '写作' },
     { id: 'diary', defaultName: '日记' },
+    { id: 'couplediary', defaultName: '情侣日记' },
+    { id: 'movie', defaultName: '电影' },
     { id: 'mailbox', defaultName: '信箱' },
-    { id: 'forum', defaultName: '论坛' }
-  ];
+    { id: 'forum', defaultName: '论坛' },
+    { id: 'memory', defaultName: '记忆' },
+    { id: 'hunter', defaultName: '猎心' },
+    { id: 'marriage', defaultName: '婚姻' },
+    { id: 'weather', defaultName: '天气' },
+  ].sort((a, b) => a.defaultName.localeCompare(b.defaultName, 'zh-CN'));
 
   if (view === 'appnames') {
      return (
@@ -537,6 +646,48 @@ export default function SettingsApp() {
                   </div>
                 </div>
               ))}
+            </div>
+         </div>
+       </div>
+     );
+  }
+
+  if (view === 'fullscreen') {
+     return (
+       <div className="h-full flex flex-col bg-slate-50">
+         {renderHeader('全屏显示')}
+         <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
+              <p className="text-xs text-slate-500 leading-relaxed">
+                开启全屏显示后，浏览器地址栏和工具栏将被隐藏，内容铺满整个屏幕。<br />
+                退出全屏可再次点击此按钮或按手机系统返回手势 / Esc 键。
+              </p>
+              <button
+                onClick={() => {
+                  if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(() => {});
+                  } else {
+                    document.documentElement.requestFullscreen().catch(() => {});
+                  }
+                }}
+                className="w-full flex items-center justify-between px-5 py-4 bg-white border border-slate-200 rounded-xl active:bg-slate-50 transition-colors"
+              >
+                <div className="flex items-center gap-3 font-medium text-slate-700">
+                  <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                    </svg>
+                  </div>
+                  {fs ? '退出全屏' : '进入全屏'}
+                </div>
+                <div className={`px-3 py-1 rounded-lg text-sm font-bold ${
+                  fs
+                    ? 'bg-red-500 text-white'
+                    : 'bg-blue-500 text-white'
+                }`}>
+                  {fs ? '退出' : '进入'}
+                </div>
+              </button>
             </div>
          </div>
        </div>

@@ -4,6 +4,7 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, X, Eye, EyeO
 import { format, addMonths, subMonths, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, startOfWeek, endOfWeek } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { CalendarDayRecord, CalendarEvent, CalendarPlan, CalendarTask } from '../../types';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 
 export default function CalendarApp() {
   const { closeApp, calendarRecords, updateCalendarRecord, characters, addActivityLog } = useAppStore();
@@ -39,6 +40,12 @@ export default function CalendarApp() {
       timestamp: Date.now(),
       relatedCharacterIds: plan.visibleTo?.length ? plan.visibleTo : undefined
     });
+    // 记忆+情绪：对可见角色
+    (plan.visibleTo || []).forEach(charId => {
+      saveInteractionMemory(charId, `日历计划「${plan.title}」(${selectedDateStr} ${plan.time})`, '', 'event', 3);
+      const store = useAppStore.getState();
+      store.addEmotionEvent({ characterId: charId, paDelta: 0.1, naDelta: -0.02, word: '期待', valence: 0.4, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
+    });
     setShowAddPlan(false);
     setNewPlan({ type: 'plan', title: '', time: '12:00', isPublished: false, visibleTo: [] });
   };
@@ -52,6 +59,12 @@ export default function CalendarApp() {
       title: `日历待办：${task.title}`,
       detail: `${selectedDateStr} 优先级 ${task.priority}`,
       timestamp: Date.now()
+    });
+    // 待办记忆
+    const store = useAppStore.getState();
+    Object.keys(store.characters).forEach(charId => {
+      if ((store.characters[charId] as any).isDisabled) return;
+      saveInteractionMemory(charId, `日历待办「${task.title}」(${selectedDateStr})`, `优先级:${task.priority}`, 'event', 2);
     });
     setShowAddTask(false);
     setNewTask({ type: 'task', title: '', priority: 'un' });
@@ -76,7 +89,7 @@ export default function CalendarApp() {
   return (
     <div className="h-full flex flex-col bg-slate-50 dark:bg-zinc-900 absolute inset-0 z-50">
       {/* Header */}
-      <div className="bg-white dark:bg-zinc-950 px-4 pt-12 pb-3 flex items-center justify-between border-b dark:border-white/5 shrink-0 shadow-sm">
+      <div className="bg-white dark:bg-zinc-950 px-4 pt-7 pb-3 flex items-center justify-between border-b dark:border-white/5 shrink-0 shadow-sm">
         <button onClick={closeApp} className="p-1 -ml-1 text-slate-800 dark:text-zinc-100"><ChevronLeft size={24} /></button>
         <h1 className="text-lg font-medium dark:text-zinc-100 flex items-center gap-2"><CalendarIcon size={20} />日历与计划</h1>
         <div className="w-8"></div>
@@ -154,9 +167,19 @@ export default function CalendarApp() {
               <span className="text-lg">😊</span>
               <span className="ml-2 w-8 text-center font-bold text-indigo-600 dark:text-indigo-400">{record.feelingLevel ?? 5}</span>
             </div>
-            <textarea 
-              value={record.feeling} 
+            <textarea
+              value={record.feeling}
               onChange={e => updateCalendarRecord(selectedDateStr, { feeling: e.target.value })}
+              onBlur={() => {
+                if (record.feeling.trim()) {
+                  const store = useAppStore.getState();
+                  Object.keys(store.characters).forEach(charId => {
+                    if ((store.characters[charId] as any).isDisabled) return;
+                    saveInteractionMemory(charId, `${selectedDateStr}的心情：${record.feeling}`, `心情指数：${record.feelingLevel}/10`, 'observation', 3);
+                    store.addEmotionEvent({ characterId: charId, paDelta: (record.feelingLevel - 5) * 0.05, naDelta: (5 - record.feelingLevel) * 0.05, word: record.feelingLevel >= 6 ? '愉悦' : record.feelingLevel <= 3 ? '低落' : '平静', valence: (record.feelingLevel - 5) * 0.15, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
+                  });
+                }
+              }}
               placeholder="今天感觉怎么样？"
               className="w-full bg-slate-50 dark:bg-zinc-900 border border-slate-200 dark:border-white/10 rounded-lg p-3 text-sm outline-none focus:border-indigo-400 focus:bg-white resize-none h-20 dark:text-zinc-100"
             />

@@ -1,0 +1,1815 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { format } from 'date-fns';
+import { motion } from 'framer-motion';
+import { useAppStore } from '../../store';
+import { generateAIResponse } from '../../lib/ai';
+import { ChevronLeft, Lock, AlertTriangle, Clock, MessageCircle, Phone, Camera, Settings, Music, Calendar, Eye, ChevronUp, Users, Compass, User, Wifi, Send } from 'lucide-react';
+import ChatRoom from './ChatRoom';
+import Moments from './Moments';
+
+type PhoneCheckState = 'locked' | 'passcode' | 'refused' | 'viewing' | 'ended';
+
+interface PhoneCheckDecision {
+  agreed: boolean;
+  passcode: string;
+  passcodeHint: string;
+  reply: string;
+  reason: string;
+}
+
+const PHONE_CHECK_KEYWORDS = [
+  '查手机', '看你手机', '给我看', '手机给我', '让我看看',
+  'check your phone', 'let me see your phone', 'phone check',
+  '看看你手机', '给我看看你手机', '手机拿来', '查岗',
+  '看手机', '检查手机', '翻手机', '看看手机',
+  '查查你', '查查手机', '查个手机', '我看你手机',
+  '给我看看', '让我检查', '拿来我看', '手机检查',
+];
+
+const isPhoneCheckTrigger = (text: string): boolean => {
+  const normalized = text.toLowerCase().replace(/\s/g, '');
+  // Exact keyword match
+  if (PHONE_CHECK_KEYWORDS.some(kw => normalized.includes(kw.toLowerCase().replace(/\s/g, '')))) {
+    return true;
+  }
+  // Flexible: text contains both "查" and "手机" within proximity
+  const hasCha = normalized.includes('查');
+  const hasPhone = normalized.includes('手机');
+  if (hasCha && hasPhone && normalized.length < 15) {
+    return true;
+  }
+  return false;
+};
+
+const APP_ICONS: Record<string, { icon: React.ReactNode; name: string; color: string }> = {
+  wechat: { icon: <MessageCircle size={24} />, name: '微信', color: 'bg-green-500' },
+  phone: { icon: <Phone size={24} />, name: '电话', color: 'bg-green-600' },
+  camera: { icon: <Camera size={24} />, name: '相机', color: 'bg-gray-500' },
+  photos: { icon: <Eye size={24} />, name: '相册', color: 'bg-yellow-500' },
+  settings: { icon: <Settings size={24} />, name: '设置', color: 'bg-gray-400' },
+  music: { icon: <Music size={24} />, name: '音乐', color: 'bg-red-500' },
+  calendar: { icon: <Calendar size={24} />, name: '日历', color: 'bg-blue-500' },
+};
+
+function getCurrentTimeContext(): string {
+  const now = new Date();
+  const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+  const beijing = new Date(utc + 3600000 * 8);
+  const y = beijing.getFullYear();
+  const M = String(beijing.getMonth() + 1).padStart(2, '0');
+  const d = String(beijing.getDate()).padStart(2, '0');
+  const h = String(beijing.getHours()).padStart(2, '0');
+  const m = String(beijing.getMinutes()).padStart(2, '0');
+  const dow = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][beijing.getDay()];
+  return `当前时间：${y}年${M}月${d}日 ${dow} ${h}:${m}（北京时间）`;
+}
+
+
+// NPC conversation fallback data (real messages for chat view)
+const NPC_FALLBACK_CHATS: Record<string, { name: string; avatar: string; messages: { text: string; fromOwner: boolean }[] }> = {
+  npc_gordon: {
+    name: '詹姆斯·戈登',
+    avatar: '#4a5568',
+    messages: [
+      { text: '最近哥谭还太平吗', fromOwner: true },
+      { text: '还好，没什么大事', fromOwner: false },
+      { text: '周六一起喝杯咖啡？我请客', fromOwner: true },
+      { text: '行啊，老地方见', fromOwner: false },
+    ],
+  },
+  npc_lucius: {
+    name: '卢修斯·福克斯',
+    avatar: '#2d3748',
+    messages: [
+      { text: '新一批装备调试好了', fromOwner: false },
+      { text: '好的，我明天过去看看', fromOwner: true },
+      { text: '这次加了点新功能，你会喜欢的', fromOwner: false },
+    ],
+  },
+  npc_clark: {
+    name: '克拉克·肯特',
+    avatar: '#2563eb',
+    messages: [
+      { text: '周末星球日报有个采访，有兴趣吗', fromOwner: false },
+      { text: '周六下午可以', fromOwner: true },
+      { text: '那到时候见', fromOwner: false },
+    ],
+  },
+  npc_alfred: {
+    name: '阿尔弗雷德',
+    avatar: '#6b7280',
+    messages: [
+      { text: '少爷，晚餐准备好了', fromOwner: false },
+      { text: '好的，马上下来', fromOwner: true },
+      { text: '今天有您的一封重要信件', fromOwner: false },
+    ],
+  },
+  npc_dick: {
+    name: '迪克·格雷森',
+    avatar: '#3b82f6',
+    messages: [
+      { text: '嘿，最近怎么样？出来喝杯咖啡？', fromOwner: false },
+      { text: '今晚不行，有任务', fromOwner: true },
+      { text: '明白，那改天', fromOwner: false },
+    ],
+  },
+  npc_barbara: {
+    name: '芭芭拉·戈登',
+    avatar: '#a855f7',
+    messages: [
+      { text: '你让我查的那件事有眉目了', fromOwner: false },
+      { text: '说详细点', fromOwner: true },
+      { text: '资料发你邮箱了，自己看', fromOwner: false },
+    ],
+  },
+  npc_selina: {
+    name: '赛琳娜·凯尔',
+    avatar: '#64748b',
+    messages: [
+      { text: '上次那件事你欠我个人情', fromOwner: false },
+      { text: '我知道，记着呢', fromOwner: true },
+      { text: '最好是真的', fromOwner: false },
+    ],
+  },
+  npc_harvey: {
+    name: '哈维·丹特',
+    avatar: '#b91c1c',
+    messages: [
+      { text: '下周的听证会你得出席', fromOwner: false },
+      { text: '知道了，我会到的', fromOwner: true },
+      { text: '这次证据很充分，别迟到', fromOwner: false },
+    ],
+  },
+  npc_harley: {
+    name: '哈莉·奎因',
+    avatar: '#ec4899',
+    messages: [
+      { text: '嘿！好久不见呀！', fromOwner: false },
+      { text: '最近忙，有空再聊', fromOwner: true },
+      { text: '你又放我鸽子！下次你请客！', fromOwner: false },
+    ],
+  },
+  npc_oliver: {
+    name: '奥利弗·奎恩',
+    avatar: '#059669',
+    messages: [
+      { text: '下周星城有个慈善晚宴，来吗', fromOwner: false },
+      { text: '看情况，到时候再说', fromOwner: true },
+      { text: '行，给你留位置', fromOwner: false },
+    ],
+  },
+  npc_barry: {
+    name: '巴里·艾伦',
+    avatar: '#f59e0b',
+    messages: [
+      { text: '嘿！中城这边有个案子需要你帮忙', fromOwner: false },
+      { text: '什么案子？', fromOwner: true },
+      { text: '电话里说不清，你来了再说', fromOwner: false },
+    ],
+  },
+  npc_diana: {
+    name: '戴安娜·普林斯',
+    avatar: '#7c3aed',
+    messages: [
+      { text: '联盟的事你考虑得怎么样了', fromOwner: false },
+      { text: '再给我点时间', fromOwner: true },
+      { text: '尽快决定，我们需要你', fromOwner: false },
+    ],
+  },
+};
+
+// NPC contacts that always appear in phone check view
+const PHONE_CHECK_NPCS = [
+  { id: 'npc_gordon', name: '詹姆斯·戈登', avatar: '#4a5568' },
+  { id: 'npc_lucius', name: '卢修斯·福克斯', avatar: '#2d3748' },
+  { id: 'npc_clark', name: '克拉克·肯特', avatar: '#2563eb' },
+  { id: 'npc_alfred', name: '阿尔弗雷德', avatar: '#6b7280' },
+  { id: 'npc_dick', name: '迪克·格雷森', avatar: '#3b82f6' },
+  { id: 'npc_barbara', name: '芭芭拉·戈登', avatar: '#a855f7' },
+  { id: 'npc_selina', name: '赛琳娜·凯尔', avatar: '#64748b' },
+  { id: 'npc_harvey', name: '哈维·丹特', avatar: '#b91c1c' },
+  { id: 'npc_harley', name: '哈莉·奎因', avatar: '#ec4899' },
+  { id: 'npc_oliver', name: '奥利弗·奎恩', avatar: '#059669' },
+  { id: 'npc_barry', name: '巴里·艾伦', avatar: '#f59e0b' },
+  { id: 'npc_diana', name: '戴安娜·普林斯', avatar: '#7c3aed' },
+];
+
+// Colors for randomly generated OC avatars
+const OC_AVATARS = ['#dc2626', '#ea580c', '#d97706', '#65a30d', '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#c026d3', '#db2777'];
+
+export async function decidePhoneCheck(
+  characterId: string,
+  character: any,
+  userMessage: string,
+  recentChats: string,
+): Promise<PhoneCheckDecision> {
+  const state = useAppStore.getState();
+  const persona = state.settings.persona;
+  const affection = character.affection ?? 50;
+  const worldSettings = state.worldSettings.find(ws =>
+    ws.characters.some(c => c.id === characterId)
+  );
+  const card = worldSettings?.characters.find(c => c.id === characterId);
+
+  const BAD_PASSCODES = ['1206', '0000', '1234', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '4321', '2580'];
+  // Treat bad default passcodes as no passcode (legacy defaults)
+  const rawPasscode = character.phonePasscode;
+  const existingPasscode = (rawPasscode && !BAD_PASSCODES.includes(rawPasscode)) ? rawPasscode : '';
+  const existingHint = existingPasscode ? (character.phonePasscodeHint || '') : '';
+
+  // Get character memories for context
+  const memBank = state.characterMemoryBank[characterId] || [];
+  const recentMemories = memBank
+    .filter((m: any) => m.layer !== 'core')
+    .slice(-5)
+    .map((m: any) => m.summary || m.content)
+    .join('\n');
+
+  const prompt = `你正在扮演${character.name}。现在用户对你说："${userMessage}"，要求查看你的手机。
+
+【当前时间】${getCurrentTimeContext()}
+
+【角色信息】
+- 姓名: ${character.name}
+- 性格: ${character.personality || card?.personality || ''}
+- 个人经历: ${character.experience || card?.experience || ''}
+${character.biography || card?.biography ? `- 【人物档案】（原著设定，必须严格遵守）: ${character.biography || card?.biography || ''}` : ''}
+- 与用户的关系: ${character.relationship || card?.relationship || ''}
+- 你对用户的看法: ${character.viewOnMe || card?.viewOnMe || ''}
+- 好感度: ${affection}/100（低于30=冷淡怀疑，30-60=普通朋友，60-80=亲近信任，80以上=非常亲密）
+
+【用户信息】
+- 姓名: ${persona.name}
+- 身份: ${persona.identity}
+
+${recentMemories ? `【近期记忆】
+${recentMemories}
+` : ''}【最近聊天】
+${recentChats || '暂无最近聊天'}
+
+【当前手机密码】
+${existingPasscode ? `当前密码: ${existingPasscode}（提示: ${existingHint}）` : '尚未设置密码'}
+
+请根据角色的性格、好感度、和用户的关系，决定是否同意让用户查看手机。
+
+【重要——关系权重规则】
+如果角色与用户是恋人/伴侣/家人关系，且好感度 ≥ 60：
+- 这是最亲密的关系等级，角色应该信任对方
+- 即使最近有轻微不愉快/拌嘴/小情绪，也不应拒绝——亲密关系中吵架后看手机反而是正常的
+- 除非发生了极端严重的事（大吵到要分手/决裂级别的冲突），否则应同意
+- 性格温柔的恋人更不会因为小情绪就拒绝
+- 性格傲娇/别扭的可能会嘴上拒绝，但内心其实愿意（设置 agreed=true，reply 写傲娇的话）
+
+如果关系是普通朋友/同事，或不满足上述条件，则按以下标准：
+
+同意条件（满足越多越可能同意）：
+- 好感度 ≥ 65
+- 关系为恋人/伴侣/家人
+- 性格不是多疑/防备型
+- 最近聊天氛围良好
+
+拒绝条件（满足越多越可能拒绝）：
+- 好感度 < 50
+- 关系为普通朋友/同事
+- 性格多疑/防备/自私
+- 最近有争吵或不愉快
+
+关于密码：
+${existingPasscode ? `- 当前密码为 ${existingPasscode}，如果要修改密码，必须在 reason 中写明修改的原因（如"上次密码被看到了"、"刚好换了一个"等）\n- 如果没有充分的修改理由，请保持密码不变` : '- 如果是第一次设置密码：用你自己的真实生日（MMDD格式）做密码——是你自己的生日，不是用户的生日！如果人物档案里没有你的生日信息，选一个对你有特殊意义的数字（幸运数字、纪念日等）。不要瞎编生日！绝对不要用 1206、0000、1234、1111、2222、8888 这类默认/重复密码！如果乱用默认密码，程序会替换成随机密码，用户将无法锁屏解锁！'}
+- passcodeHint 写提示信息（如"幸运数字"、"纪念日"等，只有确认真实生日才能写"我的生日"，否则写其他真实的提示）
+
+请严格输出以下JSON格式，不要其他内容：
+{
+  "agreed": true/false,
+  "passcode": "4位数字密码",
+  "passcodeHint": "密码提示",
+  "reply": "你作为角色对用户请求的直接回应（一句话，口语化，符合性格，注意不要直接说出密码！）",
+  "reason": "做这个决定的简短理由，如果修改了密码必须说明原因"
+}`;
+
+  try {
+    const raw = await generateAIResponse(prompt);
+    const json = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
+    // If already has a passcode and AI changed it with a substantive reason, accept it
+    const BAD_PASSCODES = ['1206', '0000', '1234', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '4321', '2580'];
+    let finalPasscode = (json.passcode && !BAD_PASSCODES.includes(json.passcode)) ? json.passcode : '';
+    let finalHint = json.passcodeHint || '密码';
+
+    if (!finalPasscode) {
+      // AI gave a bad/empty passcode — fall back
+      if (existingPasscode) {
+        finalPasscode = existingPasscode;
+        finalHint = existingHint;
+      } else {
+        finalPasscode = String(1000 + Math.floor(Math.random() * 9000));
+        finalHint = '四位数字密码';
+      }
+    } else if (existingPasscode && json.passcode !== existingPasscode) {
+      const reason = (json.reason || '').trim();
+      if (reason.length <= 4) {
+        finalPasscode = existingPasscode;
+        finalHint = existingHint;
+      }
+    }
+
+    return {
+      agreed: !!json.agreed,
+      passcode: json.agreed ? finalPasscode : '',
+      passcodeHint: json.agreed ? finalHint : '',
+      reply: json.reply || (json.agreed ? '好吧，你看吧。' : '不行。'),
+      reason: json.reason || '',
+    };
+  } catch {
+    const agreed = affection >= 65;
+    return {
+      agreed,
+      passcode: agreed ? (existingPasscode || String(Math.floor(1000 + Math.random() * 9000))) : '',
+      passcodeHint: agreed ? (existingHint || '密码') : '',
+      reply: agreed ? '好吧…不过我得先锁屏。' : '不行，我觉得这样不太合适。',
+      reason: '根据好感度自动决定',
+    };
+  }
+}
+
+
+// ── Mock conversation generator ──
+// Uses AI to generate character-appropriate conversations for the phone check view.
+
+const FALLBACK_CONVOS: Record<string, string[]> = {
+  outgoing: ['最近还好吗', '有空聊聊', '好的', '收到', '嗯', '行'],
+  incoming: ['还好', '可以', '嗯嗯', '好的', '行吧', '知道了'],
+};
+
+function buildFallbackConversations(ownerId: string, allChars: Record<string, any>): Record<string, { name: string; avatar: string; messages: { text: string; fromOwner: boolean }[] }> {
+  const result: Record<string, { name: string; avatar: string; messages: { text: string; fromOwner: boolean }[] }> = {};
+  for (const [charId, char] of Object.entries(allChars)) {
+    if (charId === ownerId || char.isWeChatFriend === false) continue;
+    const msgs: { text: string; fromOwner: boolean }[] = [];
+    const count = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+      msgs.push({ text: '...', fromOwner: i % 2 === 0 });
+    }
+    result[charId] = { name: char.name, avatar: char.avatar || '#9ca3af', messages: msgs };
+  }
+  // Always add NPC fallbacks with canonical IDs (consistent with PHONE_CHECK_NPCS)
+  for (const npc of PHONE_CHECK_NPCS) {
+    const fb = NPC_FALLBACK_CHATS[npc.id];
+    if (fb) {
+      const pool = fb.messages;
+      const shuffled = pool.sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
+      result[npc.id] = { name: npc.name, avatar: npc.avatar, messages: shuffled };
+    }
+  }
+
+  return result;
+}
+
+async function generateMockPhoneData(ownerId: string, owner: any): Promise<Record<string, { name: string; avatar: string; messages: { text: string; fromOwner: boolean }[] }>> {
+  const state = useAppStore.getState();
+  const allChars = state.characters || {};
+
+  const otherChars = Object.values(allChars).filter((c: any) => c.id !== ownerId && c.isWeChatFriend !== false);
+
+  try {
+    let charList = otherChars.map((c: any) =>
+      `${c.name}（性格：${c.personality || '未知'}，关系：${c.relationship || '朋友'}）`
+    ).join('\n');
+
+    const bio = owner?.biography || '';
+
+    // Gather ALL world characters as reference so AI knows the universe
+    const worldContext = state.worldSettings
+      ?.flatMap(ws => ws.characters || [])
+      ?.filter((c: any) => c.id !== ownerId)
+      ?.map((c: any) => c.name + '（' + (c.personality || '') + '）')
+      ?.join('\n') || '';
+
+    const prompt = `你正在扮演${owner?.name || ownerId}。请生成微信聊天记录。
+
+${getCurrentTimeContext()}
+
+${bio ? `【角色背景】\n${bio}\n\n` : ''}【任务】
+为${owner?.name || ownerId}的手机生成微信聊天记录，包含以下几类联系人（每类选合适的即可，不要硬塞）：
+
+1. 【现有联系人】从以下列表中选2-4个${owner?.name || ownerId}最近有联系的人，生成2-3条对话来回
+   - 选关系近的、近期有理由聊天的，不是所有人都要有对话
+   - 不熟的或者最近没什么好聊的就不要选了
+
+${charList}
+
+2. 【原著角色】如果以下角色与${owner?.name || ownerId}有交集，选1-2个生成聊天记录
+   - 詹姆斯·戈登（哥谭警局局长）——只选如果${owner?.name || ownerId}和警方有关系
+   - 卢修斯·福克斯（韦恩集团CEO）——只选如果${owner?.name || ownerId}和韦恩集团有关系
+   - 克拉克·肯特（星球日报记者）——只选如果${owner?.name || ownerId}认识记者或超人
+   - 赛琳娜·凯尔（猫女）——只选如果${owner?.name || ownerId}和地下世界有交集
+   - 哈维·丹特（哥谭市检察官）——只选如果${owner?.name || ownerId}和法律界有关系
+   - 哈莉·奎因（精神病医生/小丑女）——只选如果${owner?.name || ownerId}和地下世界或阿卡姆有关系
+   - 奥利弗·奎恩（星城富豪/绿箭侠）——如果${owner?.name || ownerId}和星城或超级英雄圈子有交集
+   - 巴里·艾伦（中城警察/闪电侠）——如果${owner?.name || ownerId}和超级英雄圈子有交集
+   - 戴安娜·普林斯（神奇女侠）——如果${owner?.name || ownerId}和正义联盟有交集
+   - 和角色没交集的原著角色不要硬塞！
+   - 名字前加【原著】标记
+
+3. 【原创角色】创建1-2个${owner?.name || ownerId}生活中会接触到的哥谭市民（英文名）
+   - 绝对不能是DC已有角色
+   - 必须符合${owner?.name || ownerId}的背景设定（例如黑手党老大的联系人应该和地下世界相关）
+   - 名字前加【原创】标记
+
+【要求】
+- 每条消息10-25字/单词，日常闲聊
+- 禁止任何动作/神态/心理描写，消息只能输出纯对话文本！
+- 对话内容必须贴合对方身份、性格和与${owner?.name || ownerId}的关系
+- ${owner?.name || ownerId}视角发消息直接用内容开头（不要用"我："或"我"前缀），对方发消息直接写内容
+- 按时间顺序，最后一条最新
+
+输出JSON格式：
+{"chats":[{"name":"联系人名字","messages":[
+  {"text":"消息内容","fromOwner":true},
+  {"text":"回复内容","fromOwner":false}
+]}]}`
+
+    const raw = await generateAIResponse(prompt);
+    const data = JSON.parse(raw.replace(/```json|```/g, '').trim());
+    const chats = data.chats || [];
+
+    const result = {};
+    let ocCounter = 0;
+    for (const chat of chats) {
+      const isCanon = chat.name && chat.name.startsWith('【原著】');
+      const isOC = chat.name && chat.name.startsWith('【原创】');
+      const displayName = (isCanon || isOC) ? chat.name.replace(/^【原著】|^【原创】/, '').trim() : chat.name;
+      if (isCanon) {
+        const npcId = 'npc_' + displayName.replace(/\s/g, '');
+        result[npcId] = {
+          name: displayName,
+          avatar: '#6b7280',
+          messages: (chat.messages || []).map((m: any) => ({
+            text: m.text,
+            fromOwner: m.fromOwner === true,
+          })),
+        };
+      } else if (isOC) {
+        const ocId = 'npc_oc_' + displayName.replace(/\s/g, '');
+        result[ocId] = {
+          name: displayName,
+          avatar: OC_AVATARS[ocCounter++ % OC_AVATARS.length],
+          messages: (chat.messages || []).map((m: any) => ({
+            text: m.text,
+            fromOwner: m.fromOwner === true,
+          })),
+        };
+      } else {
+        const char = otherChars.find((c: any) => c.name === chat.name);
+        if (!char) continue;
+        result[char.id] = {
+          name: char.name,
+          avatar: char.avatar || '#9ca3af',
+          messages: (chat.messages || []).map((m: any) => ({
+            text: m.text,
+            fromOwner: m.fromOwner === true,
+          })),
+        };
+      }
+    }
+
+    return result;
+  } catch {
+    return buildFallbackConversations(ownerId, allChars);
+  }
+}
+
+export { isPhoneCheckTrigger, generateMockPhoneData, PHONE_CHECK_NPCS, getNpcInfo };
+
+
+export default function PhoneCheck({
+  characterId,
+  userMessage,
+  onClose,
+  onSendChatMessage,
+  initialDecision,
+  initialPhoneData,
+}: {
+  characterId: string;
+  userMessage: string;
+  onClose: (actions?: { sentMessages: { contactName: string; text: string }[]; postedMoments: { content: string }[] }) => void;
+  onSendChatMessage: (text: string) => void;
+  initialDecision?: PhoneCheckDecision;
+  initialPhoneData?: Record<string, { name: string; avatar: string; messages: { text: string; fromOwner: boolean }[] }> | null;
+}) {
+  const { characters, settings, updateCharacter } = useAppStore();
+  const character = characters[characterId];
+
+  const initialState = initialDecision ? (initialDecision.agreed ? 'locked' : 'refused') : 'locked';
+  const [state, setState] = useState<PhoneCheckState>(initialState);
+  const [decision, setDecision] = useState<PhoneCheckDecision | null>(initialDecision || null);
+  const [isGrabMode, setIsGrabMode] = useState(false);
+  const [phoneData, setPhoneData] = useState<Record<string, { name: string; avatar: string; messages: { text: string; fromOwner: boolean }[] }> | null>(initialPhoneData || null);
+  const [remainingTime, setRemainingTime] = useState(10);
+  const [passcodeInput, setPasscodeInput] = useState('');
+  const [passcodeError, setPasscodeError] = useState(false);
+  const [viewingApp, setViewingApp] = useState<string | null>(null);
+  const [viewingChat, setViewingChat] = useState<string | null>(null);
+  const viewingAppRef = useRef(viewingApp);
+  const viewingChatRef = useRef(viewingChat);
+  // Sync refs with state
+  useEffect(() => { viewingAppRef.current = viewingApp; }, [viewingApp]);
+  useEffect(() => { viewingChatRef.current = viewingChat; }, [viewingChat]);
+
+  // Listen for back navigation from MobileShell home indicator
+  useEffect(() => {
+    let prev = useAppStore.getState().phoneCheckBackNav;
+    const unsub = useAppStore.subscribe((state) => {
+      if (state.phoneCheckBackNav !== prev) {
+        prev = state.phoneCheckBackNav;
+        if (viewingChatRef.current) {
+          setViewingChat(null);
+        } else if (viewingAppRef.current === 'wechat') {
+          setViewingApp(null);
+        }
+      }
+    });
+    return unsub;
+  }, []);
+
+  const [wechatTab, setWechatTab] = useState<'chats' | 'contacts' | 'moments' | 'me'>('chats');
+  const [error, setError] = useState<string | null>(null);
+  const [phoneCheckMomentsData, setPhoneCheckMomentsData] = useState<any[]>([]);
+  const momentsGeneratedRef = useRef(false);
+
+  // Generate AI moments for phone check moments view, triggered when entering viewing mode
+  const generatePhoneCheckMoments = useCallback(async (charId: string, char: any) => {
+    if (momentsGeneratedRef.current) return;
+    momentsGeneratedRef.current = true;
+
+    const store = useAppStore.getState();
+    const contacts: { id: string; name: string; avatar: string; personality?: string; relationship?: string }[] = [];
+
+    // Store characters that are WeChat friends
+    for (const [id, c] of Object.entries(store.characters) as [string, any][]) {
+      if (id !== charId && c.isWeChatFriend !== false) {
+        contacts.push({ id, name: c.name, avatar: c.avatar || '#9ca3af', personality: c.personality, relationship: c.relationship });
+      }
+    }
+    // NPC contacts
+    for (const npc of PHONE_CHECK_NPCS) {
+      if (!contacts.some(c => c.id === npc.id)) {
+        contacts.push({ id: npc.id, name: npc.name, avatar: npc.avatar });
+      }
+    }
+
+    if (contacts.length === 0) return;
+
+    // Pick up to 5 random contacts for moment generation
+    const shuffled = [...contacts].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, Math.min(5, contacts.length));
+    console.log('[PhoneCheck] generating moments for:', selected.map(c => c.name));
+
+    const results = await Promise.all(selected.map(async (contact) => {
+      try {
+        const prompt = `你正在扮演${contact.name}。${contact.personality ? '性格：' + contact.personality + '。' : ''}${contact.relationship ? '与' + (char?.name || charId) + '的关系：' + contact.relationship + '。' : ''}
+请以${contact.name}的身份发一条朋友圈，内容符合角色性格和背景，1-2句话，日常向，与生活相关。只输出内容，不要加引号。`;
+        const content = await generateAIResponse(prompt);
+        if (content && content.trim()) {
+          return {
+            id: 'pc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+            authorName: contact.name,
+            authorAvatar: contact.avatar,
+            content: content.trim(),
+            timestamp: Date.now() - Math.floor(Math.random() * 5 * 86400000),
+            authorId: contact.id,
+          };
+        }
+      } catch (e) {
+        console.warn('[PhoneCheck] AI moment failed for', contact.name);
+      }
+      return null;
+    }));
+
+    const validMoments = results.filter(Boolean);
+    console.log('[PhoneCheck] generated', validMoments.length, 'moments');
+    if (validMoments.length > 0) {
+      setPhoneCheckMomentsData(validMoments);
+    }
+  }, []);
+
+  const timerRef = useRef<number | null>(null);
+  const endedRef = useRef(false);
+  const isDark = settings.wechatTheme === 'dark';
+
+  // Local chat messages: store directly in phoneData so they flow through msgs rendering
+  const [typingContact, setTypingContact] = useState<string | null>(null);
+  const phoneActionsRef = useRef<{type: 'send_message' | 'post_moment'; contactName?: string; text: string}[]>([]);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize phoneData entry for contact if it doesn't exist yet
+  const ensurePhoneDataEntry = useCallback((contactId: string) => {
+    if (!phoneData || phoneData[contactId]) return;
+    const store = useAppStore.getState();
+    const char = store.characters[contactId];
+    if (char) {
+      setPhoneData(prev => prev ? {
+        ...prev,
+        [contactId]: { name: char.name, avatar: char.avatar || '#9ca3af', messages: [] }
+      } : prev);
+    } else if (contactId === '__user__') {
+      setPhoneData(prev => prev ? {
+        ...prev,
+        [contactId]: { name: store.settings.persona.name, avatar: store.settings.wechatAvatar || '#07c160', messages: [] }
+      } : prev);
+    } else if (contactId.startsWith('npc_')) {
+      const npc = PHONE_CHECK_NPCS.find(n => n.id === contactId);
+      if (npc) {
+        setPhoneData(prev => prev ? {
+          ...prev,
+          [contactId]: { name: npc.name, avatar: npc.avatar, messages: [] }
+        } : prev);
+      }
+    }
+  }, [phoneData]);
+
+  useEffect(() => {
+    if (viewingChat) {
+      ensurePhoneDataEntry(viewingChat);
+    }
+    setTypingContact(null);
+    if (chatInputRef.current) chatInputRef.current.value = '';
+  }, [viewingChat, ensurePhoneDataEntry]);
+
+  // Reset actions when entering viewing mode
+  useEffect(() => {
+    if (state === 'viewing') phoneActionsRef.current = [];
+  }, [state]);
+
+  // Save passcode if provided via initialDecision
+  useEffect(() => {
+    if (initialDecision && initialDecision.agreed) {
+      updateCharacter(characterId, { phoneCheckDecision: initialDecision, phonePasscode: initialDecision.passcode });
+    }
+  }, []);
+
+  // Cleanup legacy default passcodes from character data
+  useEffect(() => {
+    const BAD = ['1206', '0000', '1234', '1111', '2222', '3333', '4444', '5555', '6666', '7777', '8888', '9999', '4321', '2580'];
+    if (character && BAD.includes(String(character.phonePasscode || ''))) {
+      updateCharacter(characterId, { phonePasscode: '' });
+    }
+  }, []);
+
+  useEffect(() => {
+    endedRef.current = false;
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  const applyAffectionPenalty = useCallback((amount: number) => {
+    const current = character?.affection ?? 50;
+    updateCharacter(characterId, { affection: Math.max(0, Math.min(100, current + amount)) });
+  }, [characterId, character, updateCharacter]);
+
+  const handleGrab = useCallback(() => {
+    if (!decision) return;
+    setIsGrabMode(true);
+    setState('locked');
+    setRemainingTime(10);
+    setPasscodeInput('');
+    setPasscodeError(false);
+
+    onSendChatMessage(`[系统] 你抢走了${character?.name}的手机！`);
+    applyAffectionPenalty(-10);
+
+    timerRef.current = window.setInterval(() => {
+      setRemainingTime(prev => {
+        const next = prev - 1;
+        return next >= 0 ? next : 0;
+      });
+    }, 1000);
+  }, [decision, character, onSendChatMessage, applyAffectionPenalty]);
+
+  const handleSwipeUp = useCallback(() => {
+    setState('passcode');
+    setPasscodeInput('');
+    setPasscodeError(false);
+  }, []);
+
+  const handleCancelLock = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (isGrabMode) {
+      applyAffectionPenalty(-5);
+    }
+    onClose();
+  }, [isGrabMode, applyAffectionPenalty, onClose]);
+
+  const handleCancelPasscode = useCallback(() => {
+    setState('locked');
+    setPasscodeInput('');
+    setPasscodeError(false);
+  }, []);
+
+  const handleSubmitPasscode = useCallback(() => {
+    if (!decision || endedRef.current) return;
+    if (passcodeInput === decision.passcode) {
+      setState('viewing');
+      if (!isGrabMode && timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      // Only generate phone data if we don't already have it (avoid regenerating & changing contacts)
+      if (!initialPhoneData && !phoneData) {
+        generateMockPhoneData(characterId, character).then(data => {
+          setPhoneData(data);
+        });
+      }
+
+      // Start AI generation of moments for the moments view
+      generatePhoneCheckMoments(characterId, character);
+
+      if (isGrabMode) {
+        onSendChatMessage(`[系统] 你猜对了密码！在${Math.max(1, remainingTime)}秒内快速查看${character?.name}的手机...`);
+      } else {
+        onSendChatMessage(`[系统] 你解开了${character?.name}的手机，开始查看...`);
+      }
+    } else {
+      setPasscodeError(true);
+      setPasscodeInput('');
+      setTimeout(() => setPasscodeError(false), 800);
+    }
+  }, [decision, passcodeInput, isGrabMode, remainingTime, characterId, character, onSendChatMessage, updateCharacter, initialPhoneData, phoneData]);
+
+  useEffect(() => {
+    if (passcodeInput.length === 4 && state === 'passcode') {
+      handleSubmitPasscode();
+    }
+  }, [passcodeInput, state, handleSubmitPasscode]);
+
+  useEffect(() => {
+    if (!isGrabMode || remainingTime > 0 || endedRef.current) return;
+    endedRef.current = true;
+
+    if (timerRef.current) clearInterval(timerRef.current);
+    updateCharacter(characterId, { phoneCheckDecision: null });
+
+    if (state === 'viewing') {
+      onSendChatMessage(`[系统] 时间到！${character?.name}抢回了手机。`);
+      // Remember the phone check happened
+      const store = useAppStore.getState();
+      store.addCharacterMemory(characterId, {
+        characterId,
+        type: 'event',
+        content: '用户查看了我的手机（被抢回）',
+        summary: '用户查了我的手机（被抢回）',
+        tags: ['phone_check', 'privacy'],
+        valence: 0.2,
+        arousal: 0.7,
+        importance: 5,
+        layer: 'daily',
+        resolved: 1,
+      });
+      onClose();
+    } else if (state !== 'ended') {
+      setState('ended');
+      onSendChatMessage(`[系统] ${character?.name}把手机抢了回去，你什么都没看到。${character?.name}显得很生气。`);
+      applyAffectionPenalty(-5);
+    }
+  }, [remainingTime, isGrabMode, state, characterId, character, onSendChatMessage, applyAffectionPenalty, updateCharacter, onClose]);
+
+  const handleCloseViewing = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    updateCharacter(characterId, { phoneCheckDecision: null });
+
+    // Collect actions performed during phone check
+    const actions = phoneActionsRef.current;
+    const sentMessages = actions.filter(a => a.type === 'send_message').map(a => ({ contactName: a.contactName || '', text: a.text }));
+    const postedMoments = actions.filter(a => a.type === 'post_moment').map(a => ({ content: a.text }));
+
+    // Build a detailed memory string
+    let actionSummary = '用户查看了我的手机';
+    if (sentMessages.length > 0) {
+      actionSummary += '，用我的手机给' + sentMessages.map(m => m.contactName).join('、') + '发了消息';
+    }
+    if (postedMoments.length > 0) {
+      actionSummary += '，用我的账号发了' + postedMoments.length + '条朋友圈';
+    }
+
+    const store = useAppStore.getState();
+    store.addCharacterMemory(characterId, {
+      characterId,
+      type: 'event',
+      content: actionSummary,
+      summary: actionSummary,
+      tags: ['phone_check', 'privacy'],
+      valence: 0.3,
+      arousal: 0.6,
+      importance: 5,
+      layer: 'daily',
+      resolved: 1,
+    });
+
+    onSendChatMessage(`[系统] ${character?.name}拿回了手机。`);
+    onClose({ sentMessages, postedMoments });
+  }, [characterId, character, onSendChatMessage, onClose, updateCharacter]);
+
+  const handleGiveUp = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  const handleSendAsChar = useCallback(() => {
+    const inputEl = chatInputRef.current;
+    if (!inputEl || !inputEl.value.trim() || !viewingChat) return;
+    const text = inputEl.value.trim();
+    inputEl.value = '';
+
+    const store = useAppStore.getState();
+    let contactName = viewingChat;
+    if (viewingChat === '__user__') {
+      contactName = store.settings.persona.name;
+    } else if (phoneData?.[viewingChat]?.name) {
+      contactName = phoneData[viewingChat].name;
+    } else {
+      const ch = store.characters[viewingChat];
+      if (ch) contactName = ch.name;
+    }
+
+    // Append message directly into phoneData so it shows up in msgs
+    phoneActionsRef.current.push({ type: 'send_message', contactName, text });
+    if (phoneData && phoneData[viewingChat]) {
+      const newMsg = { text, fromOwner: true };
+      const updatedPhoneData = {
+        ...phoneData,
+        [viewingChat]: {
+          ...phoneData[viewingChat],
+          messages: [...phoneData[viewingChat].messages, newMsg],
+        },
+      };
+      setPhoneData(updatedPhoneData);
+    }
+
+    // Generate reply from contact
+    const contactId = viewingChat;
+    const charId = characterId;
+    const char = store.characters[charId];
+    if (!char) return;
+    // Skip reply if chatting with self (user chat)
+    if (contactId === '__user__') return;
+
+    // Determine what this contact knows
+    const contactIsRealChar = !!store.characters[contactId];
+    const npcProfile = NPC_FALLBACK_CHATS[contactId];
+
+    // Build knowledge context
+    let contactKnowledge = '';
+    if (contactIsRealChar) {
+      const c = store.characters[contactId];
+      contactKnowledge = `${c.name}，${c.relationship || '朋友'}，性格：${c.personality || ''}。${c.biography || ''}`;
+    } else if (npcProfile) {
+      contactKnowledge = `${contactName}，和${char.name}认识。`;
+    } else {
+      contactKnowledge = `${contactName}，是${char.name}认识的一个人。`;
+    }
+
+    const userPersona = store.settings.persona;
+    const isLoverOrClose = ['恋人', '伴侣', '女朋友', '男朋友', '妻子', '丈夫', '未婚妻', '未婚夫', '情人', '爱人', '老伴', '女友', '男友'];
+    const charRelationship = char.relationship || '';
+    const relationshipHint = isLoverOrClose.some(r => charRelationship.includes(r))
+      ? `你知道${char.name}有伴侣/恋人（${userPersona.name}）。`
+      : `据你所知，${char.name}是单身。`;
+
+    setTypingContact(contactName);
+    const addressHint = contactIsRealChar
+      ? `你和${char.name}的关系是${store.characters[contactId]?.relationship || '普通朋友'}`
+      : `你和${char.name}的关系是熟人`;
+    const replyPrompt = `你正在扮演${contactName}。${contactKnowledge}
+
+${char.name}给你发了一条消息："${text}"
+${addressHint}
+${relationshipHint}
+
+根据你对${char.name}的了解，判断这条消息是否像是ta本人发的。
+- 如果这条消息的语气、内容不符合${char.name}的性格，你可能怀疑不是ta本人，可能会问"你是谁？"或"你怎么用${char.name}的手机？"
+- 如果符合，你正常回复
+- 注意：根据你们的关系决定怎么称呼${char.name}。正式关系用正式称呼（如"韦恩先生"），亲密关系用亲昵称呼
+
+【输出格式——必须严格遵守】
+只输出纯对话内容，禁止包含以下任何内容：
+- 动作描写（如：她笑了笑说、他叹了口气、皱眉、点头、摇头、耸肩）
+- 神态描写（如：她冷冷地说、他温柔地回应、表情严肃）
+- 心理描写（如：他心里想、她犹豫了一下）
+- 引号或冒号前缀
+
+✅ 正确：最近还好吗
+✅ 正确：这事不好办
+❌ 错误："最近还好吗"
+❌ 错误：她说"最近还好吗"
+❌ 错误：他皱了皱眉说"这事不好办"
+
+直接输出对话内容本身，不要加任何人称前缀、动作说明、引号。`;
+
+    generateAIResponse(replyPrompt).then(reply => {
+      if (reply && reply.trim()) {
+        setTimeout(() => {
+          if (phoneData && phoneData[viewingChat]) {
+            setPhoneData(prev => prev ? {
+              ...prev,
+              [viewingChat]: {
+                ...prev[viewingChat],
+                messages: [...prev[viewingChat].messages, { text: reply.trim(), fromOwner: false }],
+              },
+            } : prev);
+          }
+          setTypingContact(null);
+        }, 800 + Math.random() * 1200);
+      } else {
+        setTypingContact(null);
+      }
+    }).catch(() => setTypingContact(null));
+  }, [viewingChat, phoneData, characterId]);
+
+  // ==== ERROR ====
+  if (error) {
+    return (
+      <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-4 bg-white/10 rounded-2xl p-6">
+          <span className="text-red-400 text-sm">{error}</span>
+          <button onClick={onClose} className="px-6 py-2 bg-white/10 rounded-full text-white/70 text-sm hover:bg-white/20 transition-all">关闭</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==== LOADING ====
+  if (!character || !decision) {
+    return (
+      <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-white/60 animate-spin" />
+          <span className="text-white/60 text-sm">{character?.name}正在考虑...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // ==== LOCK SCREEN ====
+  if (state === 'locked') {
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const beijingTime = new Date(utc + (3600000 * 8));
+    const timerPct = isGrabMode ? (remainingTime / 10) * 100 : 100;
+
+    return (
+      <motion.div
+        className="absolute inset-0 z-[100] flex flex-col items-center justify-between overflow-hidden"
+        style={{ background: 'linear-gradient(to bottom, #1e1b4b, #0f172a)' }}
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        onDragEnd={(e, info) => {
+          if (info.offset.y < -80) handleSwipeUp();
+        }}
+      >
+        {isGrabMode && (
+          <div className="absolute top-0 left-0 right-0 z-10">
+            <div className="h-1 bg-white/10">
+              <div className="h-full bg-red-500 transition-all duration-1000 ease-linear" style={{ width: `${timerPct}%` }} />
+            </div>
+            <div className="flex items-center justify-center gap-1.5 py-2 bg-red-500/10">
+              <Clock size={14} className="text-red-400" />
+              <span className="text-red-400 text-sm font-mono font-bold">{remainingTime}s</span>
+              <span className="text-red-400/60 text-xs">抓紧时间！</span>
+            </div>
+          </div>
+        )}
+
+        <div className="w-full flex justify-end px-6 pt-4 text-sm font-medium text-white/70">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-2 border border-white/50 rounded-sm relative">
+              <span className="absolute inset-0.5 right-0.5 bg-white/50 rounded-sm" style={{ width: '70%' }} />
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center flex-1 justify-center">
+          <Lock size={24} className="mb-4 text-white/50" />
+          <div className="text-7xl font-light tracking-wider text-white">{format(beijingTime, 'HH:mm')}</div>
+          <div className="text-xl mt-2 font-medium text-white/70">{format(beijingTime, 'MM月dd日 EEEE')}</div>
+          <div className="mt-auto mb-10 text-sm text-white/50 animate-bounce">向上滑动解锁</div>
+        </div>
+
+        <div className="shrink-0 flex justify-center pb-10">
+          <button onClick={handleCancelLock} className="px-8 py-2.5 rounded-full text-white/40 text-sm hover:text-white/60 hover:bg-white/5 transition-all">取消</button>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ==== PASSCODE ====
+  if (state === 'passcode') {
+    const timerPct = isGrabMode ? (remainingTime / 10) * 100 : 100;
+
+    return (
+      <motion.div
+        className="absolute inset-0 z-[100] flex flex-col items-center justify-between overflow-hidden"
+        style={{ background: 'linear-gradient(to bottom, #1e1b4b, #0f172a)' }}
+      >
+        {/* Grab mode: countdown bar */}
+        {isGrabMode && (
+          <div className="absolute top-0 left-0 right-0 z-10">
+            <div className="h-1 bg-white/10">
+              <div className="h-full bg-red-500 transition-all duration-1000 ease-linear" style={{ width: `${timerPct}%` }} />
+            </div>
+            <div className="flex items-center justify-center gap-1.5 py-2 bg-red-500/10">
+              <Clock size={14} className="text-red-400" />
+              <span className="text-red-400 text-sm font-mono font-bold">{remainingTime}s</span>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col items-center justify-center flex-1 w-full px-8">
+          {/* Title */}
+          <div className="text-xl mb-4 font-medium tracking-widest text-white/90">{passcodeError ? " " : "输入密码"}</div>
+
+          {/* Error Message Space */}
+          <div className={`text-base mb-4 font-medium h-6 text-rose-400 ${passcodeError ? 'animate-pulse' : 'opacity-0'}`}>
+            {passcodeError ? '密码错误' : ' '}
+          </div>
+
+          {/* Dot indicators */}
+          <motion.div
+            className="flex gap-4 mb-12"
+            animate={passcodeError ? { x: [-10, 10, -10, 10, 0] } : {}}
+            transition={{ duration: 0.4 }}
+          >
+            {[0, 1, 2, 3].map(i => (
+              <div
+                key={i}
+                className={`w-4 h-4 rounded-full border-2 transition-colors ${i < passcodeInput.length ? 'bg-white' : 'border-white'} ${passcodeError && i < passcodeInput.length ? 'bg-rose-400 border-rose-400' : ''}`}
+              />
+            ))}
+          </motion.div>
+
+          {/* Numeric keypad */}
+          <div className="grid grid-cols-3 gap-y-4 gap-x-8 w-full max-w-[280px]">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, '', 0, passcodeInput.length > 0 ? 'delete' : 'cancel'].map((key, i) => (
+              <div key={i} className="flex justify-center flex-col items-center">
+                {key === 'cancel' ? (
+                  <button
+                    onClick={() => { setState('locked'); setPasscodeInput(''); setPasscodeError(false); }}
+                    className="w-20 h-20 flex items-center justify-center text-sm font-bold text-white/60 active:text-white/90"
+                  >
+                    取消
+                  </button>
+                ) : key === 'delete' ? (
+                  <button
+                    onClick={() => setPasscodeInput(prev => prev.slice(0, -1))}
+                    className="w-20 h-20 flex items-center justify-center text-sm font-bold text-white/60 active:text-white/90"
+                  >
+                    删除
+                  </button>
+                ) : key !== '' ? (
+                  <button
+                    onClick={() => {
+                      if (passcodeInput.length < 4) {
+                        let current = passcodeError ? '' : passcodeInput;
+                        const next = current + key.toString();
+                        setPasscodeInput(next);
+                        setPasscodeError(false);
+                      }
+                    }}
+                    className="w-20 h-20 rounded-full flex items-center justify-center text-3xl font-light bg-black/20 active:bg-white/30 backdrop-blur-sm transition-colors border border-white/10 text-white"
+                  >
+                    {key}
+                  </button>
+                ) : (
+                  <div className="w-20 h-20" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ==== REFUSED ====
+  if (state === 'refused') {
+    return (
+      <div className="absolute inset-0 z-[100] flex flex-col bg-black/70 backdrop-blur-lg pt-20 px-6">
+        <div className="flex flex-col items-center gap-4 mb-10">
+          <div className="w-20 h-20 rounded-full border-2 border-red-400/50 shadow-lg" style={{ background: character.avatar?.startsWith('#') ? character.avatar : `url(${character.avatar || ''}) center/cover` }} />
+          <h2 className="text-white text-xl font-medium">{character.name}</h2>
+          <p className="text-white/70 text-center text-sm leading-relaxed max-w-xs">{decision.reply}</p>
+          <div className="flex items-center gap-2 text-red-400/70 text-xs bg-red-500/10 px-4 py-2 rounded-full">
+            <AlertTriangle size={14} /><span>拒绝了你的要求</span>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 mt-auto mb-16">
+          <button onClick={handleGrab} className="w-full py-4 rounded-2xl bg-red-500/20 border border-red-500/30 text-red-400 font-medium hover:bg-red-500/30 transition-all active:scale-[0.98]">抢过来看</button>
+          <button onClick={handleGiveUp} className="w-full py-3 rounded-2xl text-white/50 hover:text-white/70 transition-colors">算了</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==== VIEWING ====
+  if (state === 'viewing') {
+    const grabActive = isGrabMode && remainingTime <= 10;
+
+    if (viewingChat) {
+      const isDark = settings.wechatTheme === 'dark';
+      const state = useAppStore.getState();
+      const chatData = phoneData?.[viewingChat];
+      const npcInfo = viewingChat.startsWith('npc_') ? NPC_FALLBACK_CHATS[viewingChat] : null;
+      const otherChar = state.characters[viewingChat];
+      const isUserChat = viewingChat === '__user__';
+      const charName = isUserChat ? settings.persona.name : (chatData?.name || npcInfo?.name || otherChar?.name || '聊天');
+      const charAvatar = isUserChat ? settings.wechatAvatar : (chatData?.avatar || npcInfo?.avatar || '#9ca3af');
+      // Use real chat history for user chat; NPC chats use AI-generated messages only (no hardcoded fallbacks)
+      const rawChats = state.chats[characterId] || [];
+      const filteredChats = rawChats.filter((m: any) => m.text && !m.text.startsWith('[系统]') && !m.text.startsWith('[礼物]') && !m.text.startsWith('[转账]') && m.text !== '[语音]');
+      const msgs = isUserChat ? filteredChats.slice(-30).map((m: any) => ({ text: m.text, fromOwner: m.senderId === characterId }))
+      : (chatData?.messages?.length ? chatData.messages : (npcInfo?.messages || []));
+      return (
+        <div className="absolute inset-0 z-[100] flex flex-col bg-white dark:bg-black">
+          {grabActive && <div className="bg-red-500/80 text-white text-center text-xs py-1 font-medium">剩余 {remainingTime}s · {character.name}随时会抢回手机</div>}
+          <div className="flex items-center gap-3 px-4 pt-9 pb-1 bg-white dark:bg-[#191919] border-b dark:border-white/10 shrink-0">
+            <button onClick={() => setViewingChat(null)} className="text-gray-600 dark:text-gray-300"><ChevronLeft size={24} /></button>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: charAvatar?.startsWith('#') ? charAvatar : '#9ca3af' }}>{charName[0]}</div>
+            <h2 className="text-lg font-medium dark:text-white">{charName}</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {msgs.length === 0 ? (
+              <div className="text-center text-gray-400 text-sm pt-10">暂无消息</div>
+            ) : (
+              msgs.map((msg, i) => (
+                <div key={i} className={`flex ${msg.fromOwner ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] px-3 py-2 rounded-lg text-sm ${msg.fromOwner ? 'bg-green-500 text-white rounded-tr-md' : 'bg-gray-200 dark:bg-[#2c2c2c] dark:text-white rounded-tl-md'}`}>{msg.text}</div>
+                </div>
+              ))
+            )}
+            {typingContact && (
+              <div className="flex justify-start">
+                <div className="bg-gray-200 dark:bg-[#2c2c2c] rounded-lg rounded-tl-md px-4 py-2 text-sm text-gray-400 dark:text-gray-500">
+                  <span className="inline-flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="shrink-0 bg-white dark:bg-[#191919] border-t dark:border-white/10">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <input
+                ref={chatInputRef}
+                defaultValue=""
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSendAsChar();
+                  }
+                }}
+                placeholder={`以${character?.name}的身份回复...`}
+                className="flex-1 h-10 bg-white dark:bg-[#2c2c2c] rounded-lg px-3 text-sm dark:text-white outline-none placeholder-gray-400"
+                autoFocus
+              />
+              <button
+                onClick={handleSendAsChar}
+                className="w-10 h-10 flex items-center justify-center bg-green-500 text-white rounded-lg active:scale-90 transition-transform shrink-0"
+              >
+                <Send size={18} />
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (viewingApp === 'wechat') {
+      const isDark = settings.wechatTheme === 'dark';
+
+      // Build conversation list from phoneData
+      const conversationList: { id: string; name: string; avatar: string; lastMessage: string }[] = [];
+
+      // 1) Add NPC/OC entries from phoneData (ids starting with npc_)
+      if (phoneData) {
+        for (const [id, data] of Object.entries(phoneData) as [string, any][]) {
+          if (id.startsWith('npc_')) {
+            conversationList.push({
+              id,
+              name: data.name,
+              avatar: data.avatar || '#6b7280',
+              lastMessage: data.messages?.[data.messages.length - 1]?.text || '暂无消息',
+            });
+          }
+        }
+      }
+
+      // 2) Add real character entries from phoneData
+      if (phoneData) {
+        for (const [charId, data] of Object.entries(phoneData) as [string, any][]) {
+          if (charId.startsWith('npc_') || charId === '__user__') continue;
+          if (!conversationList.some(c => c.id === charId)) {
+            conversationList.push({
+              id: charId,
+              name: data.name,
+              avatar: data.avatar,
+              lastMessage: data.messages?.[data.messages.length - 1]?.text || '暂无消息',
+            });
+          }
+        }
+      }
+
+      // 3) Add user (persona) conversation
+      const persona = settings.persona;
+      const userConvId = '__user__';
+      const realChats = useAppStore.getState().chats[characterId] || [];
+      const lastRealMsg = [...realChats].reverse().find((m: any) => m.senderId === 'user' || m.senderId === characterId);
+      if (!conversationList.some(c => c.id === userConvId)) {
+        conversationList.push({
+          id: userConvId,
+          name: persona.name,
+          avatar: settings.wechatAvatar,
+          lastMessage: lastRealMsg ? (lastRealMsg.text || '').replace(/^\[.*?\]\s*/, '').slice(0, 30) : '最近还好吗？',
+        });
+      }
+
+      const renderContent = () => {
+        switch (wechatTab) {
+          case 'chats':
+            const chatEntries = conversationList.length > 0
+              ? conversationList
+              : [];
+            return (
+              <div className="flex-1 flex flex-col bg-white dark:bg-black min-h-0">
+                <div className="bg-white dark:bg-black px-4 pt-9 pb-1 flex items-center justify-between shrink-0 border-b dark:border-white/5">
+                  <button onClick={() => setViewingApp(null)} className="text-gray-600 dark:text-gray-300 p-1 -ml-1">
+                    <ChevronLeft size={24} />
+                  </button>
+                  <h1 className="text-lg font-medium dark:text-gray-100 flex-1 text-center">微信</h1>
+                  <div className="w-8" />
+                </div>
+                <div className="flex-1 overflow-y-auto min-h-0">
+                  {chatEntries.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500 text-sm">
+                      {character.name}的微信没有聊天记录
+                    </div>
+                  ) : (
+                    chatEntries.map((conv) => (
+                      <button key={conv.id} onClick={() => setViewingChat(conv.id)} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors border-b border-gray-100 dark:border-white/5">
+                        <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ background: conv.avatar?.startsWith('#') ? conv.avatar : '#9ca3af' }}>
+                          {conv.name[0]}
+                        </div>
+                        <div className="flex-1 text-left min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm dark:text-white">{conv.name}</span>
+                          </div>
+                          <div className="text-xs text-gray-400 truncate mt-0.5">{conv.lastMessage}</div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          case 'contacts':
+            return (
+              <PhoneCheckContacts
+                characterId={characterId}
+                characters={characters}
+                phoneData={phoneData}
+                onSelectContact={(id) => setViewingChat(id)}
+                onBack={() => setViewingApp(null)}
+              />
+            );
+          case 'moments':
+            return (
+              <PhoneCheckMoments
+                characterId={characterId}
+                character={character}
+                settings={settings}
+                onBack={() => setViewingApp(null)}
+                isDark={isDark}
+                phoneData={phoneData}
+                generatedMoments={phoneCheckMomentsData}
+                onPostMoment={(content) => {
+                  useAppStore.getState().addMoment({
+                    authorId: characterId,
+                    content,
+                  });
+                  phoneActionsRef.current.push({ type: 'post_moment', text: content });
+                }}
+              />
+            );
+          case 'me': {
+            return (
+              <div className="h-full flex flex-col bg-[#ededed] dark:bg-black">
+                <div className="absolute top-12 left-2 z-10">
+                  <button onClick={() => setViewingApp(null)} className="text-gray-600 dark:text-gray-300 p-1">
+                    <ChevronLeft size={24} />
+                  </button>
+                </div>
+                <div className="bg-white dark:bg-black pt-16 pb-8 px-6 flex items-center gap-4 mb-2">
+                  <div
+                    className="w-16 h-16 rounded-lg flex items-center justify-center text-xl font-bold text-white"
+                    style={{ background: character.avatar?.startsWith('#') ? character.avatar : '#9ca3af' }}
+                  >
+                    {character.name?.[0] || '?'}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xl font-medium mb-1 dark:text-gray-100">{character.name}</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">微信号: {character.id}</div>
+                  </div>
+                </div>
+                <div className="bg-white dark:bg-black px-4 py-3 flex justify-between items-center border-b border-t dark:border-white/5 mb-2">
+                  <span className="dark:text-gray-100">朋友圈</span>
+                </div>
+                <div className="bg-white dark:bg-black px-4 py-3 flex justify-between items-center border-b border-t dark:border-white/5 mb-2">
+                  <span className="dark:text-gray-100">表情</span>
+                </div>
+                <div className="bg-white dark:bg-black px-4 py-3 flex justify-between items-center border-b border-t dark:border-white/5">
+                  <span className="dark:text-gray-100">设置</span>
+                </div>
+              </div>
+            );
+          }
+        }
+      };
+
+      return (
+        <div className="absolute inset-0 z-[100] flex flex-col bg-white dark:bg-black">
+          {grabActive && <div className="bg-red-500/80 text-white text-center text-xs py-1 font-medium animate-pulse shrink-0">剩余 {remainingTime}s · {character.name}随时会抢回手机</div>}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {renderContent()}
+          </div>
+          <div className={`h-[54px] flex justify-around items-center border-t shrink-0 z-40 ${isDark ? 'bg-[#191919] border-white/5' : 'bg-gray-50 border-gray-200'}`}>
+            <PhoneCheckTabButton icon={<MessageCircle />} label="微信" active={wechatTab === 'chats'} onClick={() => setWechatTab('chats')} isDark={isDark} />
+            <PhoneCheckTabButton icon={<Users />} label="通讯录" active={wechatTab === 'contacts'} onClick={() => setWechatTab('contacts')} isDark={isDark} />
+            <PhoneCheckTabButton icon={<Compass />} label="发现" active={wechatTab === 'moments'} onClick={() => setWechatTab('moments')} isDark={isDark} />
+            <PhoneCheckTabButton icon={<User />} label="我" active={wechatTab === 'me'} onClick={() => setWechatTab('me')} isDark={isDark} />
+          </div>
+        </div>
+      );
+    }
+    // Homescreen
+    return (
+      <div className="absolute inset-0 z-[100] flex flex-col bg-gradient-to-b from-gray-100 to-gray-200 dark:from-gray-900 dark:to-black">
+        {grabActive && <div className="bg-red-500/80 text-white text-center text-xs py-1 font-medium animate-pulse shrink-0">剩余 {remainingTime}s · {character.name}随时会抢回手机</div>}
+        {/* Minimal status bar — only battery icon */}
+        <div className="flex justify-end px-6 pt-3 pb-1 text-xs text-gray-600 dark:text-gray-400 shrink-0">
+          <div className="w-4 h-2 border border-current rounded-sm relative">
+            <div className="absolute inset-0.5 right-0.5 bg-current rounded-sm" style={{ width: '70%' }} />
+          </div>
+        </div>
+        <div className="flex-1 p-6 relative">
+          {/* Close button at top-right */}
+          <button onClick={handleCloseViewing} className="absolute top-0 right-0 text-gray-500 dark:text-gray-400 text-xs px-2 py-1 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+            放下手机
+          </button>
+          <div className="grid grid-cols-4 gap-x-4 gap-y-6 mt-8">
+            {Object.entries(APP_ICONS).map(([key, app]) => (
+              <button key={key} onClick={() => { if (key === 'wechat') setViewingApp('wechat'); }} className="flex flex-col items-center gap-1.5 active:scale-90 transition-transform">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-md ${app.color} text-white`}>{app.icon}</div>
+                <span className="text-[10px] text-gray-600 dark:text-gray-400">{app.name}</span>
+              </button>
+            ))}
+          </div>
+          <div className="absolute bottom-8 left-6 right-6 bg-white/60 dark:bg-black/40 backdrop-blur rounded-3xl p-3 flex justify-around">
+            {['wechat', 'phone', 'settings'].map(key => {
+              const app = APP_ICONS[key];
+              return <button key={key} onClick={() => { if (key === 'wechat') setViewingApp('wechat'); }} className={`w-14 h-14 rounded-2xl flex items-center justify-center ${app.color} text-white active:scale-90 transition-transform`}>{app.icon}</button>;
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==== ENDED ====
+  return (
+    <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-3">
+        <div className="text-white/40 text-sm">操作已结束</div>
+        <button onClick={onClose} className="px-8 py-3 bg-white/10 rounded-full text-white/70 text-sm hover:bg-white/20 transition-all">关闭</button>
+      </div>
+    </div>
+  );
+}
+
+// ── PhoneCheck sub-components ──
+
+function PhoneCheckTabButton({ icon, label, active, onClick, isDark }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void; isDark: boolean }) {
+  const activeColor = isDark ? '#f3f4f6' : '#374151';
+  const inactiveColor = isDark ? '#9ca3af' : '#6b7280';
+  return (
+    <button onClick={onClick} className="flex flex-col items-center justify-center w-full h-full active:opacity-70 transition-opacity" style={{ color: active ? activeColor : inactiveColor }}>
+      <div className="mb-0.5">{React.cloneElement(icon as React.ReactElement, { size: 26, strokeWidth: active ? 2.5 : 2 })}</div>
+      <span className="text-[10px] font-medium">{label}</span>
+    </button>
+  );
+}
+
+function PhoneCheckContacts({ characterId, characters, phoneData, onSelectContact, onBack }: {
+  characterId: string;
+  characters: Record<string, any>;
+  phoneData: Record<string, any> | null;
+  onSelectContact?: (id: string) => void;
+  onBack?: () => void;
+}) {
+  const state = useAppStore.getState();
+  const realChars = Object.values(state.characters).filter((c: any) => c.id !== characterId && c.isWeChatFriend !== false);
+
+  // Add user (persona) as a contact
+  const persona = state.settings.persona;
+  if (persona && persona.name) {
+    const userIdx = realChars.findIndex((c: any) => c.id === '__user__');
+    if (userIdx === -1) {
+      realChars.unshift({
+        id: '__user__',
+        name: persona.name,
+        avatar: state.settings.wechatAvatar || '#07c160',
+        personality: '',
+        relationship: '联系人',
+        isWeChatFriend: true,
+      } as any);
+    }
+  }
+
+  // Add ALL phoneData entries (including NPC/OC contacts)
+  const allChars = [...realChars];
+
+  // Add all PHONE_CHECK_NPCS that aren't already in the store (dedup by name)
+  const storeCharNames = new Set(realChars.map((c: any) => c.name));
+  for (const npc of PHONE_CHECK_NPCS) {
+    if (!storeCharNames.has(npc.name)) {
+      allChars.push({
+        id: npc.id,
+        name: npc.name,
+        avatar: npc.avatar || '#6b7280',
+        personality: '',
+        relationship: '联系人',
+        isWeChatFriend: true,
+      } as any);
+    }
+  }
+
+  if (phoneData) {
+    for (const [contactId, data] of Object.entries(phoneData)) {
+      if (!allChars.some(c => c.id === contactId)) {
+        allChars.push({
+          id: contactId,
+          name: data.name,
+          avatar: data.avatar || '#6b7280',
+          personality: '',
+          relationship: '联系人',
+          isWeChatFriend: true,
+        } as any);
+      }
+    }
+  }
+
+  return (
+    <div className="flex-1 flex flex-col bg-white dark:bg-black min-h-0">
+      {/* Header */}
+      <div className="bg-white dark:bg-black px-4 pt-9 pb-1 flex items-center justify-between shrink-0 border-b dark:border-white/5">
+        <button onClick={onBack} className="text-gray-600 dark:text-gray-300 p-1 -ml-1">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="text-lg font-medium dark:text-gray-100 flex-1 text-center">通讯录</h1>
+        <div className="w-8" />
+      </div>
+      {/* Contact list */}
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {allChars.length === 0 ? (
+          <div className="text-center text-gray-400 text-sm pt-10">没有联系人</div>
+        ) : (
+          allChars.map((c: any) => (
+            <button
+              key={c.id}
+              onClick={() => onSelectContact?.(c.id)}
+              className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-[#1a1a1a] transition-colors border-b border-gray-100 dark:border-white/5"
+            >
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                style={{ background: c.avatar?.startsWith('#') ? c.avatar : '#9ca3af' }}
+              >
+                {c.name[0]}
+              </div>
+              <div className="flex-1 text-left min-w-0">
+                <span className="text-sm font-medium dark:text-white">{c.name}</span>
+              </div>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// NPC name/avatar lookup for moments display
+const getNpcInfo = (npcId: string): { name: string; avatar: string } | null => {
+  const npc = PHONE_CHECK_NPCS.find(n => n.id === npcId);
+  if (npc) return { name: npc.name, avatar: npc.avatar };
+  // For OCs, try to extract name from ID
+  if (npcId.startsWith('npc_oc_')) {
+    return { name: npcId.replace('npc_oc_', ''), avatar: '#6b7280' };
+  }
+  return null;
+};
+
+function PhoneCheckMoments({ characterId, character, settings, onBack, isDark, onPostMoment, phoneData, generatedMoments = [] }: {
+  characterId: string;
+  character: any;
+  settings: any;
+  onBack: () => void;
+  isDark: boolean;
+  onPostMoment?: (content: string) => void;
+  phoneData?: Record<string, { name: string; avatar: string; messages: { text: string; fromOwner: boolean }[] }> | null;
+  generatedMoments?: any[];
+}) {
+  const { moments, characters } = useAppStore();
+  const [showEditor, setShowEditor] = useState(false);
+  const [postContent, setPostContent] = useState('');
+  const [isPosting, setIsPosting] = useState(false);
+  const [momentComments, setMomentComments] = useState<Record<string, Array<{ authorName: string; authorAvatar: string; text: string; isSuspicious: boolean }>>>({});
+
+  const generateCommentsForMoment = async (momentId: string, content: string) => {
+    const store = useAppStore.getState();
+    const charName = store.characters[characterId]?.name || characterId;
+    const charPersonality = store.characters[characterId]?.personality || '';
+
+    // Build contacts list
+    const contacts: Array<{ id: string; name: string; avatar: string }> = [];
+    const addedIds = new Set<string>();
+
+    for (const [id, c] of Object.entries(store.characters)) {
+      if (id !== characterId && c.isWeChatFriend !== false && !addedIds.has(id)) {
+        contacts.push({ id, name: c.name, avatar: c.avatar || '#9ca3af' });
+        addedIds.add(id);
+      }
+    }
+
+    if (phoneData) {
+      for (const [id, data] of Object.entries(phoneData)) {
+        if (!addedIds.has(id)) {
+          contacts.push({ id, name: data.name, avatar: data.avatar || '#6b7280' });
+          addedIds.add(id);
+        }
+      }
+    }
+
+    for (const npc of PHONE_CHECK_NPCS) {
+      if (!addedIds.has(npc.id)) {
+        contacts.push({ id: npc.id, name: npc.name, avatar: npc.avatar });
+        addedIds.add(npc.id);
+      }
+    }
+
+    const shuffled = [...contacts].sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, Math.min(contacts.length, 2 + Math.floor(Math.random() * 3)));
+
+    for (const contact of selected) {
+      try {
+        const prompt = `你正在扮演${contact.name}。你在${charName}的朋友圈看到了ta发的动态：
+
+"${content}"
+
+${charName}的性格：${charPersonality}
+
+判断这条朋友圈的语气和内容是否像${charName}本人会发的：
+- 如果语气、话题、用词符合${charName}的性格和日常风格 → 正常评论（友善自然）
+- 如果语气不像${charName}，感觉很反常 → 在评论中表达疑惑
+
+【输出要求】只输出评论内容，不要引号、冒号、动作描写。8-20字，口语化。`;
+
+        const reply = await generateAIResponse(prompt);
+        if (reply && reply.trim()) {
+          const text = reply.trim();
+          await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+          setMomentComments(prev => ({
+            ...prev,
+            [momentId]: [...(prev[momentId] || []), {
+              authorName: contact.name,
+              authorAvatar: contact.avatar || '#6b7280',
+              text,
+              isSuspicious: false,
+            }],
+          }));
+        }
+      } catch (e) {
+        console.warn('[PhoneCheck] Failed to generate comment from', contact.name);
+      }
+    }
+  };
+
+  const handlePost = () => {
+    if (!postContent.trim() || isPosting) return;
+    setIsPosting(true);
+
+    const content = postContent.trim();
+    onPostMoment?.(content);
+
+    const store = useAppStore.getState();
+    const newMoment = store.moments.find(m => m.authorId === characterId && m.content === content);
+    if (newMoment) {
+      generateCommentsForMoment(newMoment.id, content);
+    } else {
+      console.warn('[PhoneCheck] Could not find newly posted moment');
+    }
+
+    setPostContent('');
+    setShowEditor(false);
+    setIsPosting(false);
+  };
+
+  // Full-screen post editor (matches Moments.tsx PostMoment style)
+  if (showEditor) {
+    return (
+      <div className="absolute inset-0 z-[110] flex flex-col bg-white dark:bg-black">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pt-12 pb-3 border-b dark:border-white/10 shrink-0">
+          <button onClick={() => { setShowEditor(false); setPostContent(''); }} className="text-gray-500 dark:text-gray-400 text-sm px-2 py-1">
+            取消
+          </button>
+          <h1 className="text-lg font-medium dark:text-gray-100">发表朋友圈</h1>
+          <button
+            onClick={handlePost}
+            disabled={!postContent.trim()}
+            className="text-sm px-4 py-1.5 bg-green-500 text-white rounded-full disabled:opacity-40"
+          >
+            发表
+          </button>
+        </div>
+        {/* Author info */}
+        <div className="flex items-center gap-3 px-4 pt-4 pb-2 shrink-0">
+          <div
+            className="w-10 h-10 rounded-md flex items-center justify-center text-sm font-bold text-white"
+            style={{ background: character?.avatar?.startsWith('#') ? character.avatar : '#9ca3af' }}
+          >
+            {character?.name?.[0] || '?'}
+          </div>
+          <span className="font-medium dark:text-white">{character?.name}</span>
+        </div>
+        {/* Text input */}
+        <div className="flex-1 px-4 pt-2">
+          <textarea
+            value={postContent}
+            onChange={e => setPostContent(e.target.value)}
+            placeholder="说点什么..."
+            className="w-full h-full bg-transparent text-base dark:text-white outline-none resize-none placeholder-gray-400"
+            autoFocus
+          />
+        </div>
+      </div>
+    );
+  }
+  
+  // NPCs in contacts should show their moments (all PHONE_CHECK_NPCS + phoneData NPCs)
+  const phoneContactIds = new Set([...Object.keys(phoneData || {}), ...PHONE_CHECK_NPCS.map(n => n.id)]);
+
+  // Gather moments from the store (from character friends + the character themselves)
+  const storeMoments = moments
+    .filter((m: any) => {
+      if (m.authorId === 'user') return true;
+      if (m.authorId === characterId) return true;
+      if (m.authorId.startsWith('npc_')) return phoneContactIds.has(m.authorId);
+      const author = characters[m.authorId];
+      return author && author.isWeChatFriend !== false;
+    })
+    .map((m: any) => ({
+      id: m.id,
+      authorName: m.authorId === 'user' ? settings.persona.name
+        : m.authorId.startsWith('npc_') ? (getNpcInfo(m.authorId)?.name || '未知')
+        : (characters[m.authorId]?.name || '未知'),
+      authorAvatar: m.authorId === 'user' ? settings.wechatAvatar
+        : m.authorId.startsWith('npc_') ? (getNpcInfo(m.authorId)?.avatar || '#9ca3af')
+        : (characters[m.authorId]?.avatar || '#9ca3af'),
+      content: m.content,
+      imageUrl: m.imageUrl || null,
+      location: m.location || null,
+      timestamp: m.timestamp,
+    }));
+  
+  
+  // Combine generated character moments + store moments, sort by time (newest first)
+  const allMoments = [...generatedMoments, ...storeMoments]
+    .filter((m, i, arr) => m.content && arr.findIndex(x => x.content === m.content && x.authorId === m.authorId) === i)
+    .sort((a: any, b: any) => b.timestamp - a.timestamp);
+  
+  return (
+    <div className="flex-1 flex flex-col bg-[#ededed] dark:bg-black min-h-0">
+      <div className="bg-gray-100 dark:bg-[#191919] px-4 pt-9 pb-2 flex items-center justify-between shrink-0 border-b dark:border-white/5">
+        <button onClick={onBack} className="text-gray-600 dark:text-gray-300 p-1 -ml-1">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="text-lg font-medium dark:text-gray-100 flex-1 text-center">发现</h1>
+        <button
+          onClick={() => setShowEditor(true)}
+          className="text-gray-600 dark:text-gray-100 p-1"
+        >
+          <Camera size={22} />
+        </button>
+      </div>
+      {/* Cover photo */}
+      <div className="h-28 bg-gradient-to-b from-blue-500 to-blue-700 dark:from-blue-800 dark:to-blue-950 relative shrink-0 bg-cover bg-center"
+        style={character?.momentsBackground ? { backgroundImage: `url(${character.momentsBackground})` } : {}}
+      >
+        <div className="absolute -bottom-8 right-4 flex items-end z-10">
+          <span className="text-white font-bold text-lg mr-2 mb-1 drop-shadow-lg">{character?.name}</span>
+          <div className="w-14 h-14 rounded-lg border-2 border-white shadow-lg bg-cover bg-center"
+            style={{ background: character?.avatar?.startsWith("#") ? character.avatar : `url(${character.avatar || ""}) center/cover` }}
+          />
+        </div>
+      </div>
+      {/* Moments feed */}
+      <div className="flex-1 overflow-y-auto px-4 pt-10 pb-4 space-y-3">
+        {allMoments.length === 0 ? (
+          <div className="text-center text-gray-400 text-sm pt-10">暂无朋友圈</div>
+        ) : (
+          allMoments.map((moment: any, i: number) => (
+            <div key={i} className="bg-white dark:bg-[#1c1c1c] rounded-xl p-4 shadow-sm border dark:border-white/5">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-md flex items-center justify-center text-sm font-bold text-white shrink-0"
+                  style={{ background: moment.authorAvatar?.startsWith("#") ? moment.authorAvatar : "#9ca3af" }}
+                >
+                  {moment.authorName[0]}
+                </div>
+                <div>
+                  <div className="font-medium text-[#576b95] text-sm">{moment.authorName}</div>
+                  <div className="text-xs text-gray-400">{new Date(moment.timestamp).toLocaleString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
+                </div>
+              </div>
+              {moment.content && <div className="text-[15px] mb-2 dark:text-gray-100">{moment.content}</div>}
+              {moment.location && <div className="text-xs text-[#576b95] mb-1">{moment.location}</div>}
+
+              {/* Phone check moment comments with tone detection */}
+              {moment.id && momentComments[moment.id]?.length > 0 && (
+                <div className="mt-3 bg-[#f7f7f7] dark:bg-[#262626] rounded-md text-sm overflow-hidden">
+                  {momentComments[moment.id].map((comment, ci) => (
+                    <div key={ci} className="px-3 py-1.5 border-b last:border-b-0 dark:border-white/5 flex items-start gap-1.5">
+                      <div className="w-5 h-5 rounded-full flex-shrink-0 mt-0.5 bg-cover bg-center"
+                        style={{ background: comment.authorAvatar?.startsWith('#') ? comment.authorAvatar : '#9ca3af' }}
+                      />
+                      <div className="flex-1 min-w-0 leading-relaxed">
+                        <span className="text-[#576b95] text-xs font-medium">{comment.authorName}</span>
+                        <span className="ml-1 dark:text-gray-100">{comment.text}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PhoneCheckMe({ character }: { character: any }) {
+  const state = useAppStore.getState();
+  const bank = state.characterMemoryBank[character?.id] || [];
+  const memoryCount = bank.length;
+
+  return (
+    <div className="h-full bg-white dark:bg-black">
+      {/* Profile header */}
+      <div className="pt-12 pb-6 px-6 bg-gradient-to-b from-gray-50 to-white dark:from-[#111] dark:to-black">
+        <div className="flex items-center gap-4">
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white shadow-lg"
+            style={{ background: character?.avatar?.startsWith('#') ? character?.avatar : '#9ca3af' }}
+          >
+            {character?.name?.[0] || '?'}
+          </div>
+          <div>
+            <h2 className="text-xl font-bold dark:text-white">{character?.name || '未知'}</h2>
+            <p className="text-sm text-gray-400 mt-0.5">{character?.personality || ''}</p>
+          </div>
+        </div>
+        {/* Stats */}
+        <div className="flex gap-6 mt-4">
+          <div className="text-center">
+            <div className="text-lg font-bold dark:text-white">{memoryCount}</div>
+            <div className="text-[10px] text-gray-400">记忆</div>
+          </div>
+        </div>
+      </div>
+      {/* Info rows */}
+      <div className="px-4 mt-2 space-y-0">
+        <div className="flex items-center justify-between py-4 border-b border-gray-100 dark:border-white/5">
+          <span className="text-sm text-gray-500">关系</span>
+          <span className="text-sm dark:text-white">{character?.relationship || '未知'}</span>
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-gray-100 dark:border-white/5">
+          <span className="text-sm text-gray-500">个性</span>
+          <span className="text-sm dark:text-white">{character?.personality || '未知'}</span>
+        </div>
+        <div className="flex items-center justify-between py-4">
+          <span className="text-sm text-gray-500">朋友圈</span>
+          <span className="text-sm dark:text-white">{character?.momentsEnabled ? '已开启' : '已关闭'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}

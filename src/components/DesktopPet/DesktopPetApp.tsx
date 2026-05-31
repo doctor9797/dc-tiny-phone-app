@@ -2,10 +2,10 @@ import React from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, Bell, BellOff, Sparkles } from 'lucide-react';
 
-function PixelPreview({ characterId }: { characterId: string | null }) {
-  const { characters } = useAppStore();
+function PixelPreview({ characterId, petColor }: { characterId: string | null; petColor?: string }) {
+  const { characters, settings } = useAppStore();
   const char = characterId ? characters[characterId] : null;
-  const bodyColor = char?.avatar || '#c53030';
+  const bodyColor = petColor || char?.avatar || '#c53030';
 
   return (
     <div style={{ position: 'relative', width: 64, height: 60 }}>
@@ -35,7 +35,7 @@ export default function DesktopPetApp() {
 
   return (
     <div className="h-full flex flex-col bg-[#fff7f3] text-slate-800">
-      <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-rose-100">
+      <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-rose-100">
         <button onClick={closeApp}><ChevronLeft size={28} /></button>
         <div className="font-black tracking-wide">桌宠</div>
         <div className="w-7" />
@@ -45,7 +45,7 @@ export default function DesktopPetApp() {
         <div className="rounded-[2rem] bg-white p-5 border border-rose-100 shadow-sm overflow-visible">
           <div className="text-sm text-slate-500 mb-3">当前桌宠</div>
           <div className="flex items-center gap-4">
-            <PixelPreview characterId={pet.characterId} />
+            <PixelPreview characterId={pet.characterId} petColor={pet.petColor} />
             <div className="flex-1">
               <div className="font-black text-xl mb-1">{pet.characterId ? characters[pet.characterId]?.name : '未选择角色'}</div>
               <div className="text-sm text-slate-500 leading-6">开启后会以Q版像素风小人形式悬浮在桌面上，支持拖动、动作切换、戳一戳和日程提醒。</div>
@@ -67,6 +67,31 @@ export default function DesktopPetApp() {
               </button>
             ))}
           </div>
+          {pet.characterId && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="text-sm font-bold mb-3">桌宠颜色</div>
+              <div className="flex flex-wrap gap-2.5 mb-3">
+                {['#c53030', '#e53e3e', '#dd6b20', '#d69e2e', '#38a169', '#319795', '#3182ce', '#5a67d8', '#805ad5', '#d53f8c', '#718096', '#1a202c'].map(color => (
+                  <button
+                    key={color}
+                    onClick={() => updateSettings({ desktopPet: { ...pet, petColor: color } })}
+                    className={`w-7 h-7 rounded-full border-2 transition-all active:scale-90 ${pet.petColor === color ? 'border-slate-600 scale-110' : 'border-transparent'}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">自定义</span>
+                <input
+                  type="color"
+                  value={pet.petColor || '#c53030'}
+                  onChange={e => updateSettings({ desktopPet: { ...pet, petColor: e.target.value } })}
+                  className="w-8 h-8 rounded cursor-pointer border-0 p-0"
+                />
+                <span className="text-xs text-slate-400 font-mono">{pet.petColor || '#c53030'}</span>
+              </div>
+            </div>
+          )}
         </div>
 
         <button

@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronDown, Search, Heart, Play, Pause, SkipBack, SkipFor
 import { generateAIResponse } from '../../lib/ai';
 import { Song } from '../../types';
 import { saveVideoFile, loadVideoFile, deleteVideoFile } from '../../lib/db';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 import { extractPlaylistId, extractSongId, importPlaylist, importSingleSong } from '../../lib/netease';
 
 // ── Ins-style design tokens ──
@@ -299,6 +300,18 @@ export default function MusicApp() {
     setShowPlayer(true);
     setSelectedFriend('');
     setPlayError('');
+    // 听歌记忆 — 对所有非禁用角色
+    const store = useAppStore.getState();
+    const now = Date.now();
+    Object.keys(store.characters).forEach(charId => {
+      if ((store.characters[charId] as any).isDisabled) return;
+      saveInteractionMemory(charId, `一起听了歌曲《${song.title}》`, `${song.artist} - ${song.title}`, 'event', 2);
+      store.addEmotionEvent({
+        characterId: charId, paDelta: 0.15, naDelta: -0.05,
+        word: '愉快', valence: 0.6, arousal: 0.5,
+        matchSource: 'free_form', source: 'manual',
+      });
+    });
   };
 
   const togglePlay = () => { togglePlayPause(); };
@@ -308,6 +321,7 @@ export default function MusicApp() {
     try { const char = characters[charId]; const reply = await generateAIResponse(`我们正在一起听一首歌，歌名是《${currentSong?.title}》。请你以${char.name}的身份简短评论这首歌。`); setFriendChat([{ sender: 'friend', text: reply }]); }
     catch { setFriendChat([{ sender: 'friend', text: '这首歌不错。' }]); }
     finally { setIsFriendTyping(false); }
+    saveInteractionMemory(charId, `和${characters[charId]?.name}一起听《${currentSong?.title}》`, currentSong?.artist, 'event', 3);
   };
 
   const handleSendChat = async () => {
@@ -316,6 +330,7 @@ export default function MusicApp() {
     try { const char = characters[selectedFriend]; const reply = await generateAIResponse(`我们正在一起听《${currentSong?.title}》。你回复：${text}`); setFriendChat(prev => [...prev, { sender: 'friend', text: reply }]); }
     catch { setFriendChat(prev => [...prev, { sender: 'friend', text: '嗯。' }]); }
     finally { setIsFriendTyping(false); }
+    saveInteractionMemory(selectedFriend, `一起听歌时聊了${text}`, `歌：${currentSong?.title}`, 'event', 2);
   };
 
   const [isImporting, setIsImporting] = useState(false);
@@ -348,7 +363,8 @@ export default function MusicApp() {
       if (songId) {
         try {
           const song = await importSingleSong(songId);
-          addSong({ ...song, id: undefined as any }); setNeteaseInput(''); setShowNetease(false);
+          const { id: _songId, ...songData } = song;
+          addSong(songData); setNeteaseInput(''); setShowNetease(false);
           return;
         } catch {
           if (playlistId) {
@@ -396,7 +412,7 @@ export default function MusicApp() {
   if (showEditSong) {
     return (
       <div className={`h-full flex flex-col ${INS_BG} absolute inset-0 z-50`}>
-        <div className="px-4 pt-12 pb-3 flex items-center justify-between bg-white/50 dark:bg-[#1a1a1a]/50 backdrop-blur-xl border-b border-slate-200/50 dark:border-white/10">
+        <div className="px-4 pt-7 pb-3 flex items-center justify-between bg-white/50 dark:bg-[#1a1a1a]/50 backdrop-blur-xl border-b border-slate-200/50 dark:border-white/10">
           <button onClick={() => { setShowEditSong(false); setRecognitionHint(''); setEditingSongId(null); setEditSongData({}); }} className={`${INS_MUTED} font-medium ${INS_BTN}`}>取消</button>
           <h1 className={`text-lg font-bold ${INS_TEXT}`}>{editingSongId ? '编辑歌曲' : '添加歌曲'}</h1>
           <button onClick={handleSaveSong} className="bg-slate-800 text-white px-5 py-1.5 rounded-full text-sm font-semibold shadow-lg ${INS_BTN}">保存</button>
@@ -545,7 +561,7 @@ export default function MusicApp() {
           {/* Friends overlay */}
           {showFriends && (
             <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-50 flex flex-col">
-              <div className="px-4 pt-12 pb-3 flex items-center justify-between border-b border-white/10">
+              <div className="px-4 pt-7 pb-3 flex items-center justify-between border-b border-white/10">
                 <span className="text-lg text-white font-semibold">邀请好友一起听</span>
                 <button onClick={() => setShowFriends(false)} className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:bg-white/20"><X size={16} /></button>
               </div>

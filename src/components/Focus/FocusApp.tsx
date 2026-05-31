@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, Play, Square, CheckCircle, Circle, MessageCircle, Music, VolumeX, Send, Clock, Image, X, Sparkles } from 'lucide-react';
 import { generateAIResponse, sendCharacterActivityFollowup } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 
 type FocusMode = 'study' | 'work' | 'read';
 type Goal = { id: string; text: string; completed: boolean };
@@ -235,6 +236,8 @@ export default function FocusApp() {
       try {
         const res = await generateAIResponse(prompt);
         setSummaryMsg(res);
+        saveInteractionMemory(charId, `在${char?.name}陪伴下完成了${mode === 'study' ? '学习' : mode === 'work' ? '工作' : '阅读'}专注`, goals.filter(g=>g.completed).map(g=>g.text).join('、'));
+        useAppStore.getState().addEmotionEvent({ characterId: charId, paDelta: 0.2, naDelta: -0.05, word: '成就感', valence: 0.5, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
         useAppStore.getState().addFocusRecord({
           id: Date.now().toString(),
           charId,
@@ -275,6 +278,8 @@ export default function FocusApp() {
       const cleanRes = res.replace(/['"]/g, '');
       setCharStatus(cleanRes);
       setSessionActions(prev => [...prev, `${formatActionTime(elapsed)} ${cleanRes}`]);
+      saveInteractionMemory(cId, `${char?.name}在专注陪伴中安静地做自己的事`, cleanRes);
+      useAppStore.getState().addEmotionEvent({ characterId: cId, paDelta: 0.08, naDelta: -0.02, word: '平静', valence: 0.2, arousal: 0.1, matchSource: 'free_form', source: 'manual' });
     } catch {
       setCharStatus('正陪伴着你...');
     }
@@ -290,6 +295,8 @@ export default function FocusApp() {
       const res = await generateAIResponse(`我在你的陪伴下完成了任务："${goal.text}"。请以【${char.name}】的口吻（${char.personality}），立刻给我一句（10字以内）简短的当面表扬或鼓励。`);
       setEncouragement(res.replace(/['"]/g, ''));
       setTimeout(() => setEncouragement(''), 5000);
+      saveInteractionMemory(charId, `${char?.name}鼓励我完成了任务`, goal.text);
+      useAppStore.getState().addEmotionEvent({ characterId: charId, paDelta: 0.15, naDelta: -0.05, word: '欣慰', valence: 0.4, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
     } catch {}
   };
 
@@ -307,6 +314,8 @@ export default function FocusApp() {
         try {
           const res = await generateAIResponse(`我们在沉浸陪伴。我跟你说："${msg}"。请以【${char.name}】的口吻（${char.personality}）回复我。字数少于30字。不要出戏！`);
           setChatMsgs(prev => [...prev, { sender: 'char', text: res }]);
+          saveInteractionMemory(charId, `在专注陪伴中和${char?.name}聊天`, msg);
+          useAppStore.getState().addEmotionEvent({ characterId: charId, paDelta: 0.08, naDelta: -0.02, word: '温和', valence: 0.2, arousal: 0.2, matchSource: 'free_form', source: 'manual' });
         } catch {}
       }
     }
@@ -363,7 +372,7 @@ export default function FocusApp() {
     const records = useAppStore.getState().focusRecords || [];
     return (
       <div className="h-full flex flex-col bg-[#f8f8fa] dark:bg-[#0f0f12]">
-        <div className="px-5 pt-12 pb-3 flex items-center justify-between border-b border-slate-200/50 dark:border-white/5">
+        <div className="px-5 pt-7 pb-3 flex items-center justify-between border-b border-slate-200/50 dark:border-white/5">
           <button onClick={() => setStep('setup')} className="w-10 h-10 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
             <ChevronLeft size={28} />
           </button>
@@ -419,7 +428,7 @@ export default function FocusApp() {
   const renderSetup = () => {
     return (
       <div className="h-full flex flex-col bg-[#f8f8fa] dark:bg-[#0f0f12]">
-        <div className="px-5 pt-12 pb-3 flex items-center justify-between">
+        <div className="px-5 pt-7 pb-3 flex items-center justify-between">
           <button onClick={closeApp} className="w-10 h-10 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-colors">
             <ChevronLeft size={28} />
           </button>
@@ -564,7 +573,7 @@ export default function FocusApp() {
         <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
 
         {/* Top bar */}
-        <div className="relative z-10 px-5 pt-12 pb-2 flex items-center justify-between">
+        <div className="relative z-10 px-5 pt-7 pb-2 flex items-center justify-between">
           <div className="flex gap-2">
             <button onClick={() => setShowChat(!showChat)}
               className="w-9 h-9 flex items-center justify-center bg-white/15 backdrop-blur-md rounded-full border border-white/20 text-white/70 hover:text-white hover:bg-white/25 transition-all">

@@ -9,7 +9,7 @@ export default function ChatList({ onOpenChat, onOpenGroupChat }: { onOpenChat: 
   const [showOptions, setShowOptions] = useState(false);
 
   const individualChats = Object.entries(chats)
-    .filter(([charId, msgs]) => msgs.length > 0 && characters[charId]?.isWeChatFriend !== false)
+    .filter(([charId, msgs]) => msgs.length > 0 && characters[charId] && characters[charId]?.isWeChatFriend !== false)
     .map(([charId, msgs]) => ({
       type: 'individual' as const,
       id: charId,

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, Wine, Skull, Star, Moon, Sun, Eye, LogOut, Send } from 'lucide-react';
 import { generateAIResponse } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 
 type CardRank = '太阳' | '月亮' | '星星';
 type GamePhase = 'setup' | 'playing' | 'gameover';
@@ -339,6 +340,8 @@ export default function LiarsBarApp() {
       const speech = await generateChallengeSpeech(aiChallenger.id, play.playerId, play.declaredRank);
       setIsAiThinking(false);
       addChat(aiChallenger.id, aiChallenger.name, speech || `${aiChallenger.name}: 我不信！`);
+      saveInteractionMemory(aiChallenger.id, `和${aiChallenger.name}一起玩骗子酒馆，${aiChallenger.name}质疑了别人`);
+      useAppStore.getState().addEmotionEvent({ characterId: aiChallenger.id, paDelta: 0.1, naDelta: 0.05, word: '怀疑', valence: -0.1, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
       await sleep(500);
       await resolveChallenge(aiChallenger.id, play, playersState);
     } else if (play.playerId !== 'user' && playersState.some(p => p.isUser && p.lives > 0)) {
@@ -373,6 +376,8 @@ export default function LiarsBarApp() {
     setIsAiThinking(false);
 
     addChat(speech ? player.id : 'system', speech ? player.name : '', speech || `${player.name} 打出了一张牌。`, !speech);
+    saveInteractionMemory(player.id, `和${player.name}一起玩骗子酒馆，${player.name}出了牌`);
+    useAppStore.getState().addEmotionEvent({ characterId: player.id, paDelta: 0.05, naDelta: 0.03, word: '狡黠', valence: 0.1, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
 
     // Remove card from hand
     const newPlayers = playersState.map(p => {
@@ -455,6 +460,8 @@ export default function LiarsBarApp() {
 请说一句简短的台词（不超过18字），关于当前局势的评论或闲聊，不要动作描写，要贴合角色性格。`
       );
       if (text) addChat(speaker.id, data.name, `${data.name}: ${text}`);
+      if (text) saveInteractionMemory(speaker.id, `和${data.name}一起玩骗子酒馆时闲聊`);
+      if (text) useAppStore.getState().addEmotionEvent({ characterId: speaker.id, paDelta: 0.05, naDelta: 0.02, word: '戏谑', valence: 0.1, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
     } catch {}
   };
 
@@ -544,6 +551,8 @@ export default function LiarsBarApp() {
       }));
       responses.filter(Boolean).forEach(r => {
         if (r) addChat(r.playerId, r.name, r.text);
+        if (r) saveInteractionMemory(r.playerId, `和${r.name}在骗子酒馆里聊天`);
+        if (r) useAppStore.getState().addEmotionEvent({ characterId: r.playerId, paDelta: 0.05, naDelta: 0.02, word: '开心', valence: 0.2, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
       });
     }
     setIsAiThinking(false);
@@ -642,7 +651,7 @@ export default function LiarsBarApp() {
     return (
       <div className="h-full flex flex-col bg-[#0a0f1a] text-blue-100 font-serif relative overflow-hidden">
         <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/dark-matter.png")' }} />
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between relative z-10 border-b border-blue-900/50">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between relative z-10 border-b border-blue-900/50">
           <button onClick={closeApp} className="w-8"><ChevronLeft size={28} /></button>
           <h1 className="text-lg tracking-widest flex items-center gap-2"><Wine size={20} /> 骗子酒馆</h1>
           <div className="w-8" />
@@ -691,7 +700,7 @@ export default function LiarsBarApp() {
     return (
       <div className="h-full flex flex-col bg-[#050a0f] text-blue-100 font-serif relative overflow-hidden">
         <div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'url("https://www.transparenttextures.com/patterns/dark-matter.png")' }} />
-        <div className="px-4 pt-12 pb-2 flex items-center justify-between relative z-10 shrink-0">
+        <div className="px-4 pt-7 pb-2 flex items-center justify-between relative z-10 shrink-0">
           <button onClick={closeApp}><ChevronLeft size={28} /></button>
           <div className="text-sm tracking-widest text-blue-400">Game Over</div>
           <div className="w-7" />
@@ -749,8 +758,10 @@ export default function LiarsBarApp() {
 你是 ${data.name}，性格：${data.personality}。
 请用一句简短的感言（不超过20字）评价这场游戏，贴合你的性格。`
                     );
+                    saveInteractionMemory(p.id, `和${data.name}一起玩骗子酒馆游戏结束`);
+                    useAppStore.getState().addEmotionEvent({ characterId: p.id, paDelta: p.lives > 0 ? 0.2 : -0.1, naDelta: p.lives > 0 ? -0.05 : 0.15, word: p.lives > 0 ? '得意' : '不甘', valence: p.lives > 0 ? 0.4 : -0.2, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
                     return `${data.name}: ${text || '有意思的一局。'}`;
-                  } catch { return `${data.name}: 有意思的一局。`; }
+                  } catch { saveInteractionMemory(p.id, `和${data.name}一起玩骗子酒馆游戏结束`); useAppStore.getState().addEmotionEvent({ characterId: p.id, paDelta: 0, naDelta: 0.05, word: '平静', valence: 0.1, arousal: 0.15, matchSource: 'free_form', source: 'manual' }); return `${data.name}: 有意思的一局。`; }
                 }));
                 setImpressions(results);
               };
@@ -787,7 +798,7 @@ export default function LiarsBarApp() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-blue-900/20 rounded-full blur-[100px] pointer-events-none" />
 
       {/* Header */}
-      <div className="px-4 pt-12 pb-2 flex items-center justify-between relative z-10 shrink-0">
+      <div className="px-4 pt-7 pb-2 flex items-center justify-between relative z-10 shrink-0">
         <button onClick={() => setGamePhase('setup')}><ChevronLeft size={28} /></button>
         <div className="text-center">
           <div className="text-sm tracking-widest text-blue-400">Liar's Bar</div>

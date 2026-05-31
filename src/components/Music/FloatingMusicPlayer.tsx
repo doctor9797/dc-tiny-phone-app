@@ -108,7 +108,7 @@ export default function FloatingMusicPlayer() {
   }, []);
 
   // Shared drag handler for both modes
-  const handleDrag = useCallback((e: React.PointerEvent) => {
+  const handleDrag = useCallback((e: PointerEvent) => {
     setIsDragging(true);
     dragRef.current = { startX: e.clientX, startY: e.clientY, posX: pos.x, posY: pos.y };
     const move = (me: PointerEvent) => {

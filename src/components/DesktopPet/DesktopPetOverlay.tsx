@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { format, parse, startOfDay, differenceInMinutes } from 'date-fns';
 import { useAppStore } from '../../store';
-import { getCharacterReply } from '../../lib/ai';
+import { generateAIResponse } from '../../lib/ai';
 
 type PetAction = 'idle' | 'blink' | 'wave' | 'hop' | 'look' | 'annoyed';
 
 function PixelPet({ characterId, action }: { characterId: string; action: PetAction }) {
-  const { characters } = useAppStore();
+  const { characters, settings } = useAppStore();
   const char = characters[characterId];
-  const bodyColor = char?.avatar || '#c53030';
+  const petColor = settings.desktopPet?.petColor;
+  const bodyColor = petColor || char?.avatar || '#c53030';
   const poseClass =
     action === 'hop' ? '-translate-y-2' :
     action === 'wave' ? 'rotate-2' :
@@ -128,8 +129,22 @@ export default function DesktopPetOverlay() {
     setAction('annoyed');
     setTimeout(() => setAction('idle'), 1200);
     try {
-      const reply = await getCharacterReply(pet.characterId, '我刚刚戳了你一下。请你用一句非常短的话表达你被打扰了，但还是愿意和我说话。');
-      setBubble(reply);
+      const char = useAppStore.getState().characters[pet.characterId];
+      const name = char?.name || '宠物';
+      const personality = char?.personality || '温柔';
+      const relationship = char?.relationship || '恋人';
+      const affection = char?.affection ?? 70;
+      const viewOnMe = char?.viewOnMe || '';
+      const nick = char?.userNickname || '你';
+      const { getCurrentMood } = await import('../../lib/moodLoop');
+      const mood = getCurrentMood(pet.characterId);
+      const moodDesc = mood ? `（心情：${mood.overall}，${mood.summary}）` : '';
+      const systemMsg = `你是${name}。性格：${personality}。和对方的关系：${relationship}（对方=${nick}，好感度${affection}/100）。${viewOnMe ? `你对${nick}的看法：${viewOnMe}` : ''}${moodDesc}你现在正在桌宠模式下陪${nick}。严禁动作描写、神态描写、心理描写。只说一句话，不加括号、引号、星号。`;
+      const reply = await generateAIResponse(
+        `（${nick}轻轻戳了你一下，在逗你玩）用一句话回应${nick}，只说你说的话，不要任何动作或心理描写。`,
+        systemMsg
+      );
+      setBubble(reply.replace(/[「」【】*（）()]/g, '').trim());
       setVisibleBubble(true);
       setTimeout(() => setVisibleBubble(false), 4200);
     } catch {

@@ -3,6 +3,7 @@ import { useAppStore } from '../../store';
 import { ChevronLeft, Images, Music2, NotebookPen, MessageCircleHeart, Trash2, Sparkles, Pencil } from 'lucide-react';
 import ImageUploader from '../ImageUploader';
 import { generateAIResponse } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 import { DiaryEntry, DiaryStyleConfig } from '../../types';
 
 const TEMPLATE_OPTIONS: Array<{ id: DiaryStyleConfig['template']; name: string; desc: string }> = [
@@ -226,6 +227,8 @@ export default function DiaryApp() {
     const prompt = `你是${char.name}，性格是${char.personality}，和我的关系是${char.relationship}。这是我的一篇日记，请你像看完我碎碎念之后给我的一句评论或留言，要求自然、像真人，会带一点你自己的性格，不要Markdown，不超过70字。\n标题：${entry.title || '未命名日记'}\n内容：${entry.content.slice(0, 800)}`;
     try {
       const text = (await generateAIResponse(prompt)).replace(/[#*]/g, '').trim();
+      saveInteractionMemory(characterId, `${characters[characterId]?.name}评论了我的日记`, text, 'event', 4);
+      useAppStore.getState().addEmotionEvent({ characterId, paDelta: 0.2, naDelta: -0.05, word: '共鸣', valence: 0.5, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
       return { id: `${Date.now()}_${characterId}_${Math.random()}`, characterId, text, createdAt: Date.now() };
     } catch {
       return {
@@ -287,7 +290,7 @@ export default function DiaryApp() {
   if (view === 'history') {
     return (
       <div className="h-full flex flex-col bg-[#fffaf2] text-slate-800">
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-stone-200">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-stone-200">
           <button onClick={closeApp}><ChevronLeft size={28} /></button>
           <div className="font-black">日记本</div>
           <button onClick={() => { resetEditor(); setView('editor'); }} className="text-sm font-bold text-slate-500">写日记</button>
@@ -315,7 +318,7 @@ export default function DiaryApp() {
 
   return (
     <div className="h-full flex flex-col bg-[#fffaf2] text-slate-800">
-      <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-stone-200">
+      <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-stone-200">
         <button onClick={closeApp}><ChevronLeft size={28} /></button>
         <div className="font-black">日记</div>
         <button onClick={() => setView('history')} className="text-sm font-bold text-slate-500">记录</button>

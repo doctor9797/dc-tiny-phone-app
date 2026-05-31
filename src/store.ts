@@ -1,18 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { AppState, AppNotification, Character, Message, Moment, Song, UserSettings, WorldSetting, CharacterCard, PetState, ChatGroup, Book, JubenshaSession, NewsIssue, ActivityLog, IFSession, ForumDirectThread, CoupleDiary, SpecialEvent, VoiceApiConfig, CharacterMemoryEntry, EmotionEvent } from './types';
+import { AppState, AppNotification, Character, Message, Moment, Song, UserSettings, WorldSetting, CharacterCard, PetState, ChatGroup, Book, JubenshaSession, NewsIssue, ActivityLog, IFSession, ForumDirectThread, CoupleDiary, SpecialEvent, VoiceApiConfig, CharacterMemoryEntry, EmotionEvent, MarriageRecord, DreamEntry, FriendRequest, CharPhoneCheckMode, CharPhoneCheckState, ImpersonatedMessage } from './types';
 
 const initialCharacters: Record<string, Character> = {
-  bruce: { id: 'bruce', name: '布鲁斯·韦恩', avatar: '#1a1a1a', background: '#333333', bubbleColor: '#4a4a4a', relationship: '朋友', interactionMode: '沉稳', personality: '深沉、多疑、富有责任感', userNickname: '你', affection: 50, remark: '布鲁斯', isStarred: false },
-  alfred: { id: 'alfred', name: '阿尔弗雷德', avatar: '#4a5568', background: '#e2e8f0', bubbleColor: '#cbd5e1', relationship: '管家', interactionMode: '恭敬', personality: '睿智、忠诚、幽默', userNickname: '少爷/小姐', affection: 80, remark: '阿福', isStarred: false },
-  dick: { id: 'dick', name: '理查德·格雷森', avatar: '#2b6cb0', background: '#ebf8ff', bubbleColor: '#bee3f8', relationship: '朋友', interactionMode: '开朗', personality: '阳光、乐观、富有领导力', userNickname: '你', affection: 60, remark: '迪克', isStarred: false },
-  jason: { id: 'jason', name: '杰森·陶德', avatar: '#c53030', background: '#fff5f5', bubbleColor: '#fed7d7', relationship: '朋友', interactionMode: '暴躁', personality: '叛逆、冲动、内心柔软', userNickname: '你', affection: 40, remark: '杰森', isStarred: false },
-  tim: { id: 'tim', name: '提姆·德雷克', avatar: '#c05621', background: '#fffff0', bubbleColor: '#fefcbf', relationship: '朋友', interactionMode: '理智', personality: '聪明、谨慎、工作狂', userNickname: '你', affection: 60, remark: '提姆', isStarred: false },
-  damian: { id: 'damian', name: '达米安·韦恩', avatar: '#276749', background: '#f0fff4', bubbleColor: '#c6f6d5', relationship: '朋友', interactionMode: '傲慢', personality: '骄傲、好胜、渴望认同', userNickname: '你', affection: 30, remark: '达米安', isStarred: false },
-  barbara: { id: 'barbara', name: '芭芭拉·戈登', avatar: '#6b46c1', background: '#faf5ff', bubbleColor: '#e9d8fd', relationship: '朋友', interactionMode: '知性', personality: '坚强、智慧、技术高超', userNickname: '你', affection: 70, remark: '芭芭拉', isStarred: false },
-  kate: { id: 'kate', name: '凯特·凯恩', avatar: '#9b2c2c', background: '#fff5f5', bubbleColor: '#fed7d7', relationship: '朋友', interactionMode: '独立', personality: '坚韧、果敢、不羁', userNickname: '你', affection: 50, remark: '凯特', isStarred: false },
-  stephanie: { id: 'stephanie', name: '史蒂芬妮·布朗', avatar: '#805ad5', background: '#faf5ff', bubbleColor: '#e9d8fd', relationship: '朋友', interactionMode: '活泼', personality: '开朗、乐观、永不言弃', userNickname: '你', affection: 60, remark: '史蒂芬妮', isStarred: false },
-  cassandra: { id: 'cassandra', name: '卡珊德拉·该隐', avatar: '#2d3748', background: '#edf2f7', bubbleColor: '#e2e8f0', relationship: '朋友', interactionMode: '沉默', personality: '安静、敏锐、行动派', userNickname: '你', affection: 50, remark: '卡珊', isStarred: false },
+  bruce: { id: 'bruce', name: '布鲁斯·韦恩', avatar: '#1a1a1a', background: '#333333', bubbleColor: '#4a4a4a', relationship: '朋友', interactionMode: '沉稳', personality: '深沉、多疑、富有责任感', biography: '生日：2月19日。父母托马斯·韦恩和玛莎·韦恩在小巷中被枪杀，此后立志打击犯罪。韦恩集团总裁，蝙蝠侠。蝙蝠家族的核心人物。与阿福情同父子，视迪克、杰森、提姆、达米安为儿子。', userNickname: '你', affection: 50, remark: '布鲁斯', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '1979-02-19', signatureName: 'Bruce Wayne' },
+  alfred: { id: 'alfred', name: '阿尔弗雷德', avatar: '#4a5568', background: '#e2e8f0', bubbleColor: '#cbd5e1', relationship: '管家', interactionMode: '恭敬', personality: '睿智、忠诚、幽默', biography: '前英国军情五处特工。韦恩家族的管家，布鲁斯的父亲般的存在。精通医疗、格斗和礼仪。幽默风趣，常在严肃时刻吐槽。蝙蝠家族的后勤支柱。', userNickname: '少爷/小姐', affection: 80, remark: '阿福', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '1955-01-01', signatureName: 'Alfred Pennyworth' },
+  dick: { id: 'dick', name: '理查德·格雷森', avatar: '#2b6cb0', background: '#ebf8ff', bubbleColor: '#bee3f8', relationship: '朋友', interactionMode: '开朗', personality: '阳光、乐观、富有领导力', biography: '生日：不详（马戏团出身）。父母在表演中被 Tony Zucco 杀害。布鲁斯的第一个养子，初代罗宾，后成长为夜翼（Nightwing）。布鲁德海文警探。阳光开朗，善于交际，是蝙蝠家族的大哥。', userNickname: '你', affection: 60, remark: '迪克', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '1996-03-20', signatureName: 'Dick Grayson' },
+  jason: { id: 'jason', name: '杰森·陶德', avatar: '#c53030', background: '#fff5f5', bubbleColor: '#fed7d7', relationship: '朋友', interactionMode: '暴躁', personality: '叛逆、冲动、内心柔软', biography: '生日：8月16日。忌日：4月27日（被小丑杀害）。后被拉撒路之池复活。布鲁斯的第二个养子，二代罗宾。性格暴烈叛逆，但内心柔软。使用双枪，不杀原则的反对者。红头罩（Red Hood），犯罪巷的统治者。', userNickname: '你', affection: 40, remark: '杰森', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '2000-08-16', signatureName: 'Jason Todd' },
+  tim: { id: 'tim', name: '提姆·德雷克', avatar: '#c05621', background: '#fffff0', bubbleColor: '#fefcbf', relationship: '朋友', interactionMode: '理智', personality: '聪明、谨慎、工作狂', biography: '生日：7月19日。父母是杰克·德雷克和珍妮特·德雷克（已故）。靠自己推理发现布鲁斯是蝙蝠侠。三代罗宾。智商超高，擅长推理和战术分析。红罗宾（Red Robin）。管家侠的接班人。工作狂，经常熬夜。', userNickname: '你', affection: 60, remark: '提姆', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '2001-07-19', signatureName: 'Tim Drake' },
+  damian: { id: 'damian', name: '达米安·韦恩', avatar: '#276749', background: '#f0fff4', bubbleColor: '#c6f6d5', relationship: '朋友', interactionMode: '傲慢', personality: '骄傲、好胜、渴望认同', biography: '布鲁斯·韦恩和塔利亚·艾尔·古尔的儿子。在刺客联盟长大，从小接受严苛训练。四代罗宾。自视甚高但内心渴望父亲的认可。擅长剑术和格斗。与迪克关系最好（迪克当蝙蝠侠时期是他的搭档）。有只叫提图斯的狗。', userNickname: '你', affection: 30, remark: '达米安', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '2008-10-12', signatureName: 'Damian Wayne' },
+  barbara: { id: 'barbara', name: '芭芭拉·戈登', avatar: '#6b46c1', background: '#faf5ff', bubbleColor: '#e9d8fd', relationship: '朋友', interactionMode: '知性', personality: '坚强、智慧、技术高超', biography: '哥谭警局局长詹姆斯·戈登的女儿。初代蝙蝠女（Batgirl）。曾被小丑枪击导致瘫痪，后恢复并成为神谕（Oracle）。黑客技术顶尖，蝙蝠家族的情报中枢。性格坚强聪慧，富有正义感。与迪克有过恋情。', userNickname: '你', affection: 70, remark: '芭芭拉', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '1994-12-05', signatureName: 'Barbara Gordon' },
+  kate: { id: 'kate', name: '凯特·凯恩', avatar: '#9b2c2c', background: '#fff5f5', bubbleColor: '#fed7d7', relationship: '朋友', interactionMode: '独立', personality: '坚韧、果敢、不羁', biography: '布鲁斯·韦恩的表姐。父亲是科林·凯恩上校。曾因性取向被军校开除。凯特·凯恩是蝙蝠女侠（Batwoman）。军事背景出身，格斗和战术能力极强。性格独立坚韧，有自己的正义标准和行事风格。', userNickname: '你', affection: 50, remark: '凯特', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '1985-01-28', signatureName: 'Kate Kane' },
+  stephanie: { id: 'stephanie', name: '史蒂芬妮·布朗', avatar: '#805ad5', background: '#faf5ff', bubbleColor: '#e9d8fd', relationship: '朋友', interactionMode: '活泼', personality: '开朗、乐观、永不言弃', biography: '反派 Cluemaster（线索大师）的女儿。曾被父亲利用但因内心正义而背叛他。先后以 Spoiler（搅局者）、Robin（罗宾）、Batgirl（蝙蝠女）身份活动。性格开朗活泼，永不言弃。与提姆有过恋情。与卡珊关系极好。', userNickname: '你', affection: 60, remark: '史蒂芬妮', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '2001-02-14', signatureName: 'Stephanie Brown' },
+  cassandra: { id: 'cassandra', name: '卡珊德拉·该隐', avatar: '#2d3748', background: '#edf2f7', bubbleColor: '#e2e8f0', relationship: '朋友', interactionMode: '沉默', personality: '安静、敏锐、行动派', biography: '父亲是大卫·该隐（刺客），母亲是西瓦女士（Lady Shiva，世界上最强的武术家之一）。从小被剥夺语言能力以培养战斗本能。能精准预判对手动作。二代蝙蝠女（Batgirl）。话少但洞察力极强。与史蒂芬妮是闺蜜。', userNickname: '你', affection: 50, remark: '卡珊', isStarred: false, isWeChatFriend: true, momentsEnabled: false, momentsFrequency: 2, birthDate: '2002-04-15', signatureName: 'Cassandra Cain' },
 };
 
 const initialSettings: UserSettings = {
@@ -37,6 +37,7 @@ const initialSettings: UserSettings = {
   persona: {
     name: 'User',
     age: '20',
+    birthDate: '2000-01-01',
     profession: '平民',
     identity: '普通人',
     appearance: '普通',
@@ -47,13 +48,13 @@ const initialSettings: UserSettings = {
   signature: '这个人很懒，什么都没写',
   wechatAvatar: '#3b82f6',
   appIcons: {},
-  appOrder: ['wechat', 'music', 'settings', 'tarot', 'bottle', 'worldbook', 'liarsbar', 'jubensha', 'ifapp', 'vocab', 'copet', 'focus', 'reader', 'calendar', 'billing', 'beautify', 'news', 'desktoppet', 'writing', 'diary', 'mailbox', 'forum', 'memory'],
+  appOrder: ['wechat', 'music', 'settings', 'tarot', 'bottle', 'worldbook', 'liarsbar', 'jubensha', 'ifapp', 'vocab', 'copet', 'focus', 'reader', 'calendar', 'billing', 'beautify', 'news', 'desktoppet', 'writing', 'diary', 'couplediary', 'movie', 'mailbox', 'forum', 'memory', 'hunter', 'marriage', 'weather', 'dream'],
   dockApps: [],
   showDock: true,
   appNameOverrides: {},
   timeOffsetMinutes: 0,
   mailbox: {
-    enabledSenderIds: ['alfred', 'dick'],
+    enabledSenderIds: [],
     frequencyByCharacter: {
       alfred: 'medium',
       dick: 'low',
@@ -209,10 +210,11 @@ interface AppActions {
   notification: AppNotification | null;
   notificationQueue: AppNotification[];
   clearNotification: () => void;
-  addMoment: (moment: Omit<Moment, 'id' | 'timestamp' | 'likes' | 'comments'>) => void;
+  addMoment: (moment: Omit<Moment, 'id' | 'likes' | 'comments'>) => void;
   addMomentComment: (momentId: string, authorId: string, text: string, replyToId?: string) => void;
   deleteMomentComment: (momentId: string, index: number) => void;
   deleteMoment: (momentId: string) => void;
+  clearMoments: () => void;
   toggleMomentLike: (momentId: string, characterId: string) => void;
   addSong: (song: Omit<Song, 'id'>) => void;
   updateSong: (songId: string, updates: Partial<Song>) => void;
@@ -222,10 +224,10 @@ interface AppActions {
   updateWorldSetting: (id: string, setting: Partial<WorldSetting>) => void;
   deleteWorldSetting: (id: string) => void;
   setActiveWorldSetting: (id: string | null) => void;
-  throwBottle: (text: string, imageUrl?: string, musicUrl?: string) => void;
+  throwBottle: (text: string, imageUrl?: string) => void;
   deleteBottle: (bottleId: string) => void;
   receiveBottleReply: (bottleId: string, reply: string) => void;
-  addFriendRequest: (characterCard: CharacterCard) => void;
+  addFriendRequest: (characterCard: CharacterCard, reAddMessage?: string) => void;
   acceptFriendRequest: (requestId: string) => void;
   addSticker: (url: string) => void;
   updateCoPet: (data: PetState | null) => void;
@@ -281,6 +283,10 @@ interface AppActions {
   markMailboxLetterRead: (id: string) => void;
   saveForumPost: (post: import('./types').ForumPost) => void;
   deleteForumPost: (id: string) => void;
+  toggleLikePost: (postId: string, userHandle: string) => void;
+  toggleLikeComment: (postId: string, commentId: string, userHandle: string) => void;
+  repostPost: (postId: string, userHandle: string, originTitle: string, originContent: string) => void;
+  setTakeoverWritingArticleId: (id: string | null) => void;
   addTarotRecord: (record: import('./types').TarotRecord) => void;
   deleteTarotRecord: (id: string) => void;
   setNotification: (notification: AppNotification | null) => void;
@@ -294,11 +300,24 @@ interface AppActions {
   nextSong: () => void;
   prevSong: () => void;
   setMusicPlayerMode: (mode: AppState['musicPlayback']['mode']) => void;
-  addCharacterMemory: (characterId: string, entry: Omit<CharacterMemoryEntry, 'id' | 'createdAt' | 'lastAccessedAt' | 'accessCount'>) => void;
+  addCharacterMemory: (characterId: string, entry: Omit<CharacterMemoryEntry, 'id' | 'createdAt' | 'lastAccessedAt' | 'accessCount' | 'characterId'>) => void;
   deleteCharacterMemory: (characterId: string, memoryId: string) => void;
   updateCharacterMemoryAccess: (characterId: string, memoryId: string) => void;
+  updateCharacterMemory: (characterId: string, memoryId: string, updates: Partial<CharacterMemoryEntry>) => void;
+  mergeCharacterMemories: (characterId: string, keepId: string, mergeId: string) => void;
   clearCharacterMemories: (characterId: string) => void;
   addEmotionEvent: (event: Omit<EmotionEvent, 'id' | 'timestamp'>) => void;
+  addMarriageRecord: (characterId: string, record: Omit<MarriageRecord, 'id' | 'issuedAt'>) => void;
+  // Dream/梦 App actions
+  dreams: Record<string, DreamEntry[]>;
+  addDream: (characterId: string, dream: DreamEntry) => void;
+  updateDream: (characterId: string, dreamId: string, updates: Partial<DreamEntry>) => void;
+  deleteDream: (characterId: string, dreamId: string) => void;
+  // ── Character Phone Check (角色查我手机) ──
+  startCharPhoneCheck: (characterId: string, mode: CharPhoneCheckMode) => void;
+  updateCharPhoneCheck: (updates: Partial<CharPhoneCheckState>) => void;
+  endCharPhoneCheck: () => void;
+  addImpersonatedMessage: (msg: ImpersonatedMessage) => void;
 }
 
 const getCharacterExperience = (id: string) => {
@@ -313,6 +332,12 @@ const getCharacterExperience = (id: string) => {
     case 'kate': return '布鲁斯的表姐，蝙蝠女侠，曾因性取向被军校开除，后在哥谭独立打击犯罪，行事果敢。';
     case 'stephanie': return '曾是搅局者、罗宾和蝙蝠女孩，父亲是反派“线索大师”，性格乐观，永不言弃。';
     case 'cassandra': return '刺客大卫·该隐和西瓦女士的女儿，从小被培养成完美杀手，不善言辞但能读懂肢体语言，现为孤儿/黑蝙蝠。';
+    case 'gordon': return '哥谭警局局长，与蝙蝠侠有着长期的合作关系，是哥谭少数值得信赖的执法者。';
+    case 'lucius': return '韦恩集团的CEO，蝙蝠侠的技术后盾，管理着蝙蝠侠的各种高科技装备研发。';
+    case 'selina': return '哥谭最著名的珠宝大盗猫女，亦正亦邪，与蝙蝠侠有着复杂的情感纠葛。';
+    case 'rat': return '哥谭街头的情报贩子，三教九流都认识，消息灵通但胆小怕事。';
+    case 'leslie': return '哥谭东区的社区医生，心地善良，长期为蝙蝠家族提供秘密医疗服务。';
+    case 'shadow': return '身份成谜的情报中间人，处理各类见不得光的交易，高效且绝对保密。';
     default: return 'DC宇宙角色';
   }
 };
@@ -329,6 +354,12 @@ const getCharacterViewOnMe = (id: string) => {
     case 'kate': return '觉得你是个独立有趣的人，偶尔会约你出去喝一杯，把你当成可以倾诉的平民朋友。';
     case 'stephanie': return '把你当成最好的闺蜜/兄弟，经常拉着你一起去吃好吃的，分享她的快乐和烦恼。';
     case 'cassandra': return '虽然不怎么说话，但喜欢静静地待在你身边，通过你的肢体语言知道你是个善良的人，对你非常信任。';
+    case 'gordon': return '把你当作值得信赖的市民，态度友好但保持一定的职业距离。';
+    case 'lucius': return '对你很客气，把你当作韦恩集团的朋友，有技术问题也乐于帮忙。';
+    case 'selina': return '对你保持着好奇和防备，不太清楚你的底细，但看在布鲁斯的面子上还算友善。';
+    case 'rat': return '对你点头哈腰的，觉得你是个大人物，想从你这里多赚点情报费。';
+    case 'leslie': return '把你当成普通病人一样温柔对待，叮嘱你注意身体，有空来诊所坐坐。';
+    case 'shadow': return '几乎没有多余的话，有事说事，高效沟通，对你保持着绝对的专业距离。';
     default: return '未知';
   }
 };
@@ -341,6 +372,7 @@ export const defaultWorldCharacters: CharacterCard[] = Object.values(initialChar
   experience: getCharacterExperience(char.id),
   relationship: char.relationship,
   viewOnMe: getCharacterViewOnMe(char.id),
+  birthDate: char.birthDate,
 
 }));
 
@@ -398,18 +430,28 @@ export const useAppStore = create<AppState & AppActions>()(
       },
       characterMemoryBank: {},
       emotionEvents: [],
+      dreams: {},
+      // ── Character Phone Check (角色查我手机) ──
+      charPhoneCheck: {
+        isActive: false,
+        characterId: null,
+        mode: null,
+        phase: '',
+        countdown: 10,
+        canGrabBack: true,
+      },
+      impersonatedMessages: [],
+
+      takeoverMailboxLetterId: null,
+      forumNavigateToPostId: null,
+      takeoverForumPostId: null,
+      takeoverWritingArticleId: null,
       notification: null,
       notificationQueue: [],
-      clearNotification: () => set((state) => {
-        const nextQueue = [...(state.notificationQueue || [])];
-        const nextNotification = nextQueue.shift() || null;
-        return { notification: nextNotification, notificationQueue: nextQueue };
-      }),
+      clearNotification: () => set({ notification: null, notificationQueue: [] }),
       setNotification: (notification) => set((state) => ({
         ...(shouldDisplayNotification(state as AppState & AppActions, notification)
-          ? state.notification
-            ? { notification: state.notification, notificationQueue: [...(state.notificationQueue || []), notification as AppNotification] }
-            : { notification, notificationQueue: state.notificationQueue || [] }
+          ? { notification, notificationQueue: state.notificationQueue || [] }
           : { notification: state.notification, notificationQueue: state.notificationQueue || [] })
       })),
 
@@ -417,7 +459,7 @@ export const useAppStore = create<AppState & AppActions>()(
       lock: () => set({ isLocked: true, currentApp: null }),
       openApp: (app) => set({ currentApp: app }),
       closeApp: () => set({ currentApp: null }),
-      
+
       updateSettings: (newSettings) => set((state) => ({ settings: { ...state.settings, ...newSettings } })),
 
       saveForumDmThread: (thread) => set((state) => ({
@@ -494,15 +536,11 @@ export const useAppStore = create<AppState & AppActions>()(
               }))
             : [];
         const visibleNotifications = notifications.filter(item => shouldDisplayNotification(state as AppState & AppActions, item));
-        const nextNotification = !state.notification && visibleNotifications.length > 0 ? visibleNotifications[0] : state.notification;
-        const queuedNotifications =
-          state.notification
-            ? visibleNotifications
-            : visibleNotifications.slice(1);
+        const nextNotification = visibleNotifications.length > 0 ? visibleNotifications[visibleNotifications.length - 1] : state.notification;
         return {
           chats: { ...state.chats, [channelId]: [...chat, ...messages] },
           notification: nextNotification,
-          notificationQueue: [...(state.notificationQueue || []), ...queuedNotifications]
+          notificationQueue: []
         };
       }),
 
@@ -706,9 +744,9 @@ export const useAppStore = create<AppState & AppActions>()(
           partnerWritingFrequency: 'medium',
           startDate: Date.now(),
           specialEvents: [
-            { id: 'default1', name: '纪念日', date: Date.now(), color: '#ec4899' },
-            { id: 'default2', name: '生日', date: Date.now(), color: '#f59e0b' },
-            { id: 'default3', name: '约会日', date: Date.now(), color: '#10b981' },
+            { id: 'default1', name: '纪念日', date: Date.now().toString(), color: '#ec4899' },
+            { id: 'default2', name: '生日', date: Date.now().toString(), color: '#f59e0b' },
+            { id: 'default3', name: '约会日', date: Date.now().toString(), color: '#10b981' },
           ],
           reminders: [
             { id: '1', type: 'anniversary', name: '纪念日', days: [52, 100, 200, 365, 500, 1000], notifyBefore: 3, enabled: true },
@@ -779,9 +817,10 @@ export const useAppStore = create<AppState & AppActions>()(
       })),
 
       saveForumPost: (post) => set((state) => {
-        // 去重：30分钟内同一作者+同一标题视为重复
+        // 去重：30分钟内同一作者+同一标题视为重复（排除自身编辑）
         const isDup = (state.forumPosts || []).some(
-          existing => existing.authorHandle === post.authorHandle
+          existing => existing.id !== post.id
+            && existing.authorHandle === post.authorHandle
             && existing.title === post.title
             && Math.abs(existing.createdAt - post.createdAt) < 30 * 60 * 1000
         );
@@ -794,6 +833,67 @@ export const useAppStore = create<AppState & AppActions>()(
         forumPosts: (state.forumPosts || []).filter(post => post.id !== id)
       })),
 
+      toggleLikePost: (postId, userHandle) => set((state) => ({
+        forumPosts: (state.forumPosts || []).map(post =>
+          post.id === postId ? {
+            ...post,
+            likedBy: post.likedBy?.includes(userHandle)
+              ? post.likedBy.filter(h => h !== userHandle)
+              : [...(post.likedBy || []), userHandle],
+            likeCount: post.likedBy?.includes(userHandle)
+              ? Math.max(0, (post.likeCount || 0) - 1)
+              : (post.likeCount || 0) + 1,
+          } : post
+        )
+      })),
+
+      toggleLikeComment: (postId, commentId, userHandle) => set((state) => ({
+        forumPosts: (state.forumPosts || []).map(post =>
+          post.id === postId ? {
+            ...post,
+            comments: post.comments.map(comment =>
+              comment.id === commentId ? {
+                ...comment,
+                likedBy: comment.likedBy?.includes(userHandle)
+                  ? comment.likedBy.filter(h => h !== userHandle)
+                  : [...(comment.likedBy || []), userHandle],
+              } : comment
+            )
+          } : post
+        )
+      })),
+
+      repostPost: (postId, userHandle, originTitle, originContent) => set((state) => {
+        const original = (state.forumPosts || []).find(p => p.id === postId);
+        if (!original) return state;
+        const now = Date.now();
+        const repostPost: import('./types').ForumPost = {
+          id: `${now}_repost_${userHandle}`,
+          boardId: original.boardId,
+          authorHandle: userHandle,
+          title: `转发 @${original.authorHandle}`,
+          content: originContent || original.content,
+          createdAt: now,
+          updatedAt: now,
+          comments: [],
+          visitCount: 0,
+          likeCount: 0,
+          repostCount: 0,
+          likedBy: [],
+          repostedBy: [],
+          parentPostId: original.id,
+        };
+        return {
+          forumPosts: [
+            repostPost,
+            ...(state.forumPosts || []).map(p =>
+              p.id === original.id ? { ...p, repostCount: (p.repostCount || 0) + 1 } : p
+            )
+          ]
+        };
+      }),
+
+      setTakeoverWritingArticleId: (id) => set({ takeoverWritingArticleId: id }),
       addTarotRecord: (record) => set((state) => ({
         tarotRecords: [record, ...(state.tarotRecords || [])]
       })),
@@ -829,6 +929,85 @@ export const useAppStore = create<AppState & AppActions>()(
         if (!isStoreCharacterEnabled(state as AppState & AppActions, characterId)) {
           return {};
         }
+
+        // If character is not a WeChat friend, block message and send friend request
+        const ch = state.characters[characterId];
+        if (ch && ch.isWeChatFriend === false) {
+          const existingRequest = state.friendRequests.find(
+            r => r.characterCard.id === characterId && r.status === 'pending'
+          );
+          if (!existingRequest) {
+            const card: CharacterCard = {
+              id: characterId,
+              name: ch.name,
+              avatar: ch.avatar || '#333',
+              personality: ch.personality || '',
+              experience: (ch as any).experience || '',
+              relationship: ch.relationship || '朋友',
+              viewOnMe: (ch as any).viewOnMe || '',
+            };
+            const newRequest: FriendRequest = {
+              id: Date.now().toString(),
+              characterCard: card,
+              status: 'pending',
+              reAddMessage: '',
+              pendingMessage: text,
+            };
+            // Fire async AI to generate reAddMessage
+            setTimeout(async () => {
+              try {
+                const { generateAIResponse } = await import('./lib/ai');
+                const fullState = useAppStore.getState();
+                const activeWorld = fullState.worldSettings.find(w => w.id === fullState.activeWorldSettingId) || fullState.worldSettings[0];
+                const worldCharCard = activeWorld?.characters.find(c => c.id === characterId);
+                const worldContent = activeWorld ? activeWorld.content : '';
+                const cardPersonality = worldCharCard?.personality || ch.personality || '普通';
+                const cardViewOnMe = worldCharCard?.viewOnMe || '';
+                const cardExperience = worldCharCard?.experience || '';
+                const cardForce = worldCharCard?.forceRequirements || '';
+                const cardBio = worldCharCard?.biography || ch.biography || '';
+                const reason = await generateAIResponse(
+                  '你正在扮演' + ch.name + '。角色设定：\n'
+                  + '性格：' + cardPersonality + '\n'
+                  + (cardBio ? '背景：' + cardBio + '\n' : '')
+                  + (cardExperience ? '经历：' + cardExperience + '\n' : '')
+                  + (cardViewOnMe ? '对方在你眼中的印象：' + cardViewOnMe + '\n' : '')
+                  + (cardForce ? '强制要求：' + cardForce + '\n' : '')
+                  + (worldContent ? '世界观：' + worldContent + '\n' : '')
+                  + '用户删除了你的微信好友。根据你的性格和你们的关系，生成一句自然真实的回应。\n'
+                  + '严禁动作描写、神态描写、心理描写。不加括号引号。直接以文字开头。'
+                );
+                if (reason?.trim()) {
+                  const current = useAppStore.getState().friendRequests.find(r => r.id === newRequest.id);
+                  if (current && current.status === 'pending') {
+                    useAppStore.setState((s) => ({
+                      friendRequests: s.friendRequests.map(r =>
+                        r.id === newRequest.id ? { ...r, reAddMessage: reason.trim() } : r
+                      ),
+                    }));
+                  }
+                }
+              } catch {}
+            }, 100);
+            return {
+              friendRequests: [newRequest, ...state.friendRequests],
+              notification: {
+                id: Date.now(),
+                title: ch.name,
+                text: ch.name + '请求添加你为朋友',
+                sourceApp: 'wechat',
+                openApp: 'wechat',
+                characterId,
+              },
+              notificationQueue: [],
+            };
+          }
+          return {
+            friendRequests: state.friendRequests.map(r =>
+              r.id === existingRequest.id ? { ...r, pendingMessage: text } : r
+            ),
+          };
+        }
         const chat = state.chats[characterId] || [];
         const parts = splitMessageText(text);
         const baseTs = minTimestamp ? minTimestamp + 1 : Date.now();
@@ -847,15 +1026,15 @@ export const useAppStore = create<AppState & AppActions>()(
           openApp: 'wechat'
         }));
         const visibleNotifications = notifications.filter(item => shouldDisplayNotification(state as AppState & AppActions, item));
-        return { 
+        return {
           chats: { ...state.chats, [characterId]: [...chat, ...messages] },
-          notification: !state.notification && visibleNotifications.length > 0 ? visibleNotifications[0] : state.notification,
-          notificationQueue: [...(state.notificationQueue || []), ...(state.notification ? visibleNotifications : visibleNotifications.slice(1))]
+          notification: visibleNotifications.length > 0 ? visibleNotifications[visibleNotifications.length - 1] : state.notification,
+          notificationQueue: []
         };
       }),
 
       addMoment: (moment) => set((state) => ({
-        moments: [{ ...moment, id: Date.now().toString(), timestamp: Date.now(), likes: [], comments: [] }, ...state.moments]
+        moments: [{ ...moment, id: Date.now().toString(), timestamp: moment.timestamp ?? Date.now(), likes: [], comments: [] }, ...state.moments]
       })),
 
       addMomentComment: (momentId, authorId, text, replyToId?) => set((state) => ({
@@ -869,6 +1048,8 @@ export const useAppStore = create<AppState & AppActions>()(
       deleteMoment: (momentId) => set((state) => ({
         moments: state.moments.filter(m => m.id !== momentId)
       })),
+
+      clearMoments: () => set({ moments: [] }),
 
       toggleMomentLike: (momentId, characterId) => set((state) => ({
         moments: state.moments.map(m => {
@@ -913,8 +1094,8 @@ export const useAppStore = create<AppState & AppActions>()(
         activeWorldSettingId: id
       })),
 
-      throwBottle: (text, imageUrl, musicUrl) => set((state) => ({
-        bottles: [{ id: Date.now().toString(), text, imageUrl, musicUrl, timestamp: Date.now() }, ...state.bottles]
+      throwBottle: (text, imageUrl) => set((state) => ({
+        bottles: [{ id: Date.now().toString(), text, imageUrl, timestamp: Date.now() }, ...state.bottles]
       })),
 
       deleteBottle: (bottleId) => set((state) => ({
@@ -925,7 +1106,16 @@ export const useAppStore = create<AppState & AppActions>()(
         bottles: state.bottles.map(b => b.id === bottleId ? { ...b, reply } : b)
       })),
 
-      addFriendRequest: (characterCard) => set((state) => {
+      addFriendRequest: (characterCard, reAddMessage) => set((state) => {
+        const existingChar = state.characters[characterCard.id];
+
+        // If character already exists, don't overwrite — just add the request
+        if (existingChar) {
+          return {
+            friendRequests: [{ id: Date.now().toString(), characterCard, status: 'pending', reAddMessage }, ...state.friendRequests],
+          };
+        }
+
         const newChar: Character = {
           id: characterCard.id,
           name: characterCard.name,
@@ -935,14 +1125,17 @@ export const useAppStore = create<AppState & AppActions>()(
           relationship: characterCard.relationship || '陌生人',
           interactionMode: '普通',
           personality: characterCard.personality || '',
+          experience: characterCard.experience || '',
+          biography: characterCard.biography || '',
+          viewOnMe: characterCard.viewOnMe || '',
           userNickname: '你',
-          affection: 50,
+          affection: characterCard.affection ?? 50,
           remark: characterCard.name,
           isStarred: false,
           isWeChatFriend: false
         };
         return {
-          friendRequests: [{ id: Date.now().toString(), characterCard, status: 'pending' }, ...state.friendRequests],
+          friendRequests: [{ id: Date.now().toString(), characterCard, status: 'pending', reAddMessage }, ...state.friendRequests],
           characters: { ...state.characters, [newChar.id]: newChar }
         };
       }),
@@ -950,29 +1143,81 @@ export const useAppStore = create<AppState & AppActions>()(
       acceptFriendRequest: (requestId) => set((state) => {
         const req = state.friendRequests.find(r => r.id === requestId);
         if (!req || req.status === 'accepted') return state;
-        
+
+        const existingChar = state.characters[req.characterCard.id];
+        const now = Date.now();
+        const reAddMessages: Message[] = [];
+
+        // ONLY send reAddMessage ("why did you delete me?"), NOT pendingMessage
+        // pendingMessage will be delivered after user replies to the reAddMessage
+        if (req.reAddMessage) {
+          reAddMessages.push({
+            id: now + '_readd',
+            senderId: req.characterCard.id,
+            text: req.reAddMessage,
+            timestamp: now,
+          });
+        }
+
+        // Store pendingMessage on the accepted request's character for later delivery
+        const charUpdate: any = { isWeChatFriend: true };
+        if (req.pendingMessage) {
+          charUpdate.pendingAppMessage = req.pendingMessage;
+        }
+
+        if (existingChar) {
+          const existingChat = state.chats[req.characterCard.id] || [];
+          return {
+            friendRequests: state.friendRequests.map(r => r.id === requestId ? {
+              ...r,
+              status: 'accepted',
+              pendingMessage: undefined, // stored on char now
+            } : r),
+            characters: {
+              ...state.characters,
+              [req.characterCard.id]: { ...existingChar, ...charUpdate }
+            },
+            chats: {
+              ...state.chats,
+              [req.characterCard.id]: [...existingChat, ...reAddMessages]
+            }
+          };
+        }
+
+        // New character
         const newCharacter = {
-           id: req.characterCard.id,
-           name: req.characterCard.name,
-           avatar: req.characterCard.avatar || '#333',
-           background: '#ffffff',
-           bubbleColor: '#ffffff',
-           relationship: req.characterCard.relationship || '朋友',
-           interactionMode: req.characterCard.interactionMode || '友好',
-           personality: req.characterCard.personality || '',
-           userNickname: req.characterCard.userNickname || '你',
-           affection: req.characterCard.affection || 50,
-           remark: req.characterCard.name,
-           isStarred: false,
-           isWeChatFriend: true,
-           ...state.characters[req.characterCard.id]
+          ...state.characters[req.characterCard.id],
+          id: req.characterCard.id,
+          name: req.characterCard.name,
+          avatar: req.characterCard.avatar || '#333',
+          background: '#ffffff',
+          bubbleColor: '#ffffff',
+          relationship: req.characterCard.relationship || '朋友',
+          interactionMode: req.characterCard.interactionMode || '友好',
+          personality: req.characterCard.personality || '',
+          experience: req.characterCard.experience || '',
+          biography: req.characterCard.biography || '',
+          userNickname: req.characterCard.userNickname || '你',
+          affection: req.characterCard.affection || 50,
+          remark: req.characterCard.name,
+          isStarred: false,
+          isWeChatFriend: true,
+          ...(req.pendingMessage ? { pendingAppMessage: req.pendingMessage } : {}),
         };
 
         return {
-          friendRequests: state.friendRequests.map(r => r.id === requestId ? { ...r, status: 'accepted' } : r),
+          friendRequests: state.friendRequests.map(r => r.id === requestId ? {
+            ...r,
+            status: 'accepted',
+            pendingMessage: undefined,
+          } : r),
           characters: {
              ...state.characters,
              [req.characterCard.id]: newCharacter
+          },
+          chats: {
+            ...state.chats,
+            [req.characterCard.id]: (state.chats[req.characterCard.id] || []).concat(reAddMessages)
           }
         };
       }),
@@ -1045,6 +1290,7 @@ export const useAppStore = create<AppState & AppActions>()(
       addCharacterMemory: (characterId, entry) => set((state) => {
         const newMemory: CharacterMemoryEntry = {
           ...entry,
+          characterId,
           id: `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           createdAt: Date.now(),
           lastAccessedAt: Date.now(),
@@ -1053,38 +1299,90 @@ export const useAppStore = create<AppState & AppActions>()(
           resolved: entry.resolved ?? 0,
           priorVersions: entry.priorVersions || [],
         };
-        const existing = state.characterMemoryBank[characterId] || [];
+        const bank = state.characterMemoryBank || {};
+        const existing = bank[characterId] || [];
         return {
           characterMemoryBank: {
-            ...state.characterMemoryBank,
+            ...bank,
             [characterId]: [newMemory, ...existing].slice(0, 200),
           }
         };
       }),
 
-      deleteCharacterMemory: (characterId, memoryId) => set((state) => ({
-        characterMemoryBank: {
-          ...state.characterMemoryBank,
-          [characterId]: (state.characterMemoryBank[characterId] || []).filter(m => m.id !== memoryId),
-        }
-      })),
+      deleteCharacterMemory: (characterId, memoryId) => set((state) => {
+        const bank = state.characterMemoryBank || {};
+        return {
+          characterMemoryBank: {
+            ...bank,
+            [characterId]: (bank[characterId] || []).filter(m => m.id !== memoryId),
+          }
+        };
+      }),
 
-      updateCharacterMemoryAccess: (characterId, memoryId) => set((state) => ({
-        characterMemoryBank: {
-          ...state.characterMemoryBank,
-          [characterId]: (state.characterMemoryBank[characterId] || []).map(m =>
-            m.id === memoryId ? { ...m, lastAccessedAt: Date.now(), accessCount: m.accessCount + 1 } : m
-          ),
-        }
-      })),
+      updateCharacterMemoryAccess: (characterId, memoryId) => set((state) => {
+        const bank = state.characterMemoryBank || {};
+        return {
+          characterMemoryBank: {
+            ...bank,
+            [characterId]: (bank[characterId] || []).map(m =>
+              m.id === memoryId ? { ...m, lastAccessedAt: Date.now(), accessCount: m.accessCount + 1 } : m
+            ),
+          }
+        };
+      }),
 
-      clearCharacterMemories: (characterId) => set((state) => ({
-        characterMemoryBank: {
-          ...state.characterMemoryBank,
-          [characterId]: [],
-        }
-      })),
+      updateCharacterMemory: (characterId, memoryId, updates) => set((state) => {
+        const bank = state.characterMemoryBank || {};
+        return {
+          characterMemoryBank: {
+            ...bank,
+            [characterId]: (bank[characterId] || []).map(m =>
+              m.id === memoryId ? { ...m, ...updates } : m
+            ),
+          }
+        };
+      }),
 
+      mergeCharacterMemories: (characterId, keepId, mergeId) => set((state) => {
+        const bank = state.characterMemoryBank || {};
+        const mems = bank[characterId] || [];
+        const keep = mems.find(m => m.id === keepId);
+        const merge = mems.find(m => m.id === mergeId);
+        if (!keep || !merge) return {};
+
+        // Merge merge's content into keep's priorVersions, then remove merge
+        const mergedContent = keep.content + '\n---merged---\n' + merge.content;
+        const newPrior = [
+          ...(keep.priorVersions || []),
+          { content: mergedContent, mergedAt: Date.now() },
+        ];
+        return {
+          characterMemoryBank: {
+            ...bank,
+            [characterId]: mems
+              .filter(m => m.id !== mergeId)
+              .map(m => m.id === keepId ? {
+                ...m,
+                accessCount: m.accessCount + merge.accessCount,
+                priorVersions: newPrior,
+                tags: [...new Set([...m.tags, ...merge.tags])].slice(0, 8),
+                importance: Math.max(m.importance, merge.importance),
+                lastAccessedAt: Date.now(),
+              } : m),
+          }
+        };
+      }),
+
+      clearCharacterMemories: (characterId) => set((state) => {
+        const bank = state.characterMemoryBank || {};
+        return {
+          characterMemoryBank: {
+            ...bank,
+            [characterId]: [],
+          },
+          emotionEvents: (state.emotionEvents || []).filter(e => e.characterId !== characterId),
+        };
+      }),
       addEmotionEvent: (event) => set((state) => ({
         emotionEvents: [
           {
@@ -1095,9 +1393,135 @@ export const useAppStore = create<AppState & AppActions>()(
           ...state.emotionEvents,
         ].slice(0, 500), // keep last 500
       })),
+
+      addMarriageRecord: (characterId, record) => set((state) => {
+        const newRecord: MarriageRecord = {
+          ...record,
+          id: `mar_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          issuedAt: Date.now(),
+        };
+        const char = state.characters[characterId];
+        if (!char) return {};
+        const history = char.marriageHistory || [];
+        const newRelationshipStatus = record.isReissue
+          ? char.relationshipStatus
+          : record.type === 'marriage' ? 'married' as const : 'divorced' as const;
+        return {
+          characters: {
+            ...state.characters,
+            [characterId]: {
+              ...char,
+              relationshipStatus: newRelationshipStatus,
+              marriageHistory: [...history, newRecord],
+            }
+          }
+        };
+      }),
+
+      // ── Dream/梦 App ──
+      addDream: (characterId, dream) => set((state) => ({
+        dreams: {
+          ...state.dreams,
+          [characterId]: [...(state.dreams[characterId] || []), dream],
+        },
+      })),
+      updateDream: (characterId, dreamId, updates) => set((state) => ({
+        dreams: {
+          ...state.dreams,
+          [characterId]: (state.dreams[characterId] || []).map(d =>
+            d.id === dreamId ? { ...d, ...updates } : d
+          ),
+        },
+      })),
+      deleteDream: (characterId, dreamId) => set((state) => ({
+        dreams: {
+          ...state.dreams,
+          [characterId]: (state.dreams[characterId] || []).filter(d => d.id !== dreamId),
+        },
+      })),
+      // ── Character Phone Check (角色查我手机) ──
+      startCharPhoneCheck: (characterId, mode) => set((state) => ({
+        charPhoneCheck: {
+          isActive: true,
+          characterId,
+          mode,
+          phase: mode === 'direct' ? '正在查看你的聊天记录…' : '正在检查你的手机…',
+          countdown: 10,
+          canGrabBack: true,
+        },
+      })),
+      updateCharPhoneCheck: (updates) => set((state) => ({
+        charPhoneCheck: { ...state.charPhoneCheck, ...updates },
+      })),
+      endCharPhoneCheck: () => set({
+        charPhoneCheck: {
+          isActive: false,
+          characterId: null,
+          mode: null,
+          phase: '',
+          countdown: 10,
+          canGrabBack: true,
+        },
+      }),
+      addImpersonatedMessage: (msg) => set((state) => ({
+        impersonatedMessages: [...state.impersonatedMessages, msg],
+      })),
     }),
     {
       name: 'dc-phone-storage',
+      partialize: (state) => {
+        const { ...rest } = state as any;
+        // 限制 chats 大小：每个角色最多保留最近 50 条消息
+        if (rest.chats) {
+          const newChats: Record<string, any[]> = {};
+          for (const [id, msgs] of Object.entries(rest.chats) as [string, any[]][]) {
+            newChats[id] = Array.isArray(msgs) ? msgs.slice(-50) : msgs;
+          }
+          rest.chats = newChats;
+        }
+        // 限制 moments 大小：最多保留最近 200 条
+        if (Array.isArray(rest.moments)) {
+          rest.moments = rest.moments.slice(-200);
+        }
+        // 限制 characterMemoryBank 大小：每个角色最多保留 100 条
+        if (rest.characterMemoryBank) {
+          const newBank: Record<string, any[]> = {};
+          for (const [id, mems] of Object.entries(rest.characterMemoryBank) as [string, any[]][]) {
+            if (Array.isArray(mems)) newBank[id] = mems.slice(-100);
+          }
+          rest.characterMemoryBank = newBank;
+        }
+        // 字体数据存储在 IndexedDB，不占用 localStorage
+        if (rest.settings?.customFontData) {
+          rest.settings = { ...rest.settings, customFontData: undefined };
+        }
+        return rest;
+      },
+      merge: (persisted, initial) => {
+        const p = (persisted || {}) as Record<string, any>;
+        const i = initial as Record<string, any>;
+        // Standard shallow merge of top-level fields
+        const merged = { ...i, ...p };
+        // 清理可能存在于旧 persist 中的超大字体 data URL
+        if (merged.settings?.customFontData) {
+          merged.settings = { ...merged.settings, customFontData: undefined };
+        }
+        // Deep-merge characters to backfill any new fields (e.g. signatureName)
+        // that existing persisted data doesn't have yet
+        if (p.characters && i.characters) {
+          merged.characters = { ...i.characters };
+          for (const [id, persistedChar] of Object.entries(p.characters)) {
+            const pc = persistedChar as Record<string, any>;
+            const cleaned = { ...pc };
+
+            merged.characters[id] = {
+              ...(initial.characters[id] || {}),
+              ...cleaned,
+            };
+          }
+        }
+        return merged as any;
+      },
     }
   )
 );

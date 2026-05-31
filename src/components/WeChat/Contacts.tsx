@@ -4,7 +4,7 @@ import { UserPlus } from 'lucide-react';
 import { pinyin } from 'pinyin-pro';
 
 export default function Contacts({ onOpenChat }: { onOpenChat: (id: string) => void }) {
-  const { characters, closeApp, friendRequests, acceptFriendRequest } = useAppStore();
+  const { characters, closeApp, friendRequests, acceptFriendRequest, sendAdvancedMessage } = useAppStore();
   const listRef = useRef<HTMLDivElement>(null);
 
   const pendingRequests = friendRequests.filter(r => r.status === 'pending');
@@ -73,8 +73,16 @@ export default function Contacts({ onOpenChat }: { onOpenChat: (id: string) => v
                     <div className="text-xs text-gray-500 dark:text-gray-400">请求添加你为朋友</div>
                   </div>
                 </div>
-                <button 
-                  onClick={() => acceptFriendRequest(req.id)}
+                <button
+                  onClick={() => {
+                    acceptFriendRequest(req.id);
+                    if (req.reAddMessage) {
+                      sendAdvancedMessage(req.characterCard.id, {
+                        text: req.reAddMessage,
+                        senderId: req.characterCard.id,
+                      });
+                    }
+                  }}
                   className="bg-green-500 text-white px-3 py-1 rounded text-sm"
                 >
                   接受

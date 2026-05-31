@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { useAppStore } from '../store';
-import { scoreMemory } from '../lib/characterMemory';
+import { scoreMemory, mergeSimilarMemories } from '../lib/characterMemory';
+import { getCurrentMood, getFeelMemories } from '../lib/moodLoop';
 import {
   ChevronLeft, Brain, Heart, X, Plus, Search,
-  BarChart3, Star, Activity, BookOpen,
+  BarChart3, Star, Activity, BookOpen, Smile, Frown, Pin, PinOff,
 } from 'lucide-react';
 import EmotionStarChart from './Memory/EmotionStarChart';
 import DecayCurve from './Memory/DecayCurve';
@@ -22,6 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
   conversation: '对话',
   event: '事件',
   preference: '偏好',
+  feel: '感受',
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -30,10 +32,11 @@ const TYPE_COLORS: Record<string, string> = {
   conversation: 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-300',
   event: 'bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-300',
   preference: 'bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-300',
+  feel: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-300',
 };
 
 export default function MemoryApp() {
-  const { characters, characterMemoryBank, addCharacterMemory, deleteCharacterMemory, closeApp } = useAppStore();
+  const { characters, characterMemoryBank, addCharacterMemory, deleteCharacterMemory, updateCharacterMemory, clearCharacterMemories, closeApp } = useAppStore();
   const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
   const [newMemoryText, setNewMemoryText] = useState('');
   const [memoryFilter, setMemoryFilter] = useState<string>('all');
@@ -45,16 +48,26 @@ export default function MemoryApp() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [detailTab, setDetailTab] = useState<'list' | 'starchart'>('list');
   const [decayMemoryId, setDecayMemoryId] = useState<string | null>(null);
-  const [showDecoration, setShowDecoration] = useState(false);
-  const [showForgotten, setShowForgotten] = useState(false);
   const [showMoodManager, setShowMoodManager] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [expandedFeelIds, setExpandedFeelIds] = useState<Set<string>>(new Set());
+
+  const toggleFeelExpand = (id: string) => {
+    setExpandedFeelIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const sortedCharacters = useMemo(() =>
-    Object.values(characters).sort((a, b) => {
-      const countA = (characterMemoryBank[a.id] || []).length;
-      const countB = (characterMemoryBank[b.id] || []).length;
-      return countB - countA;
-    }),
+    Object.values(characters)
+      .filter(c => (c as any).isDisabled !== true)
+      .sort((a, b) => {
+        const countA = (characterMemoryBank[a.id] || []).length;
+        const countB = (characterMemoryBank[b.id] || []).length;
+        return countB - countA;
+      }),
     [characters, characterMemoryBank]
   );
 
@@ -105,7 +118,7 @@ export default function MemoryApp() {
         <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImportBg} />
 
         {/* Header */}
-        <div className="relative z-10 px-4 pt-12 pb-4 flex items-center justify-between border-b border-purple-200/30 dark:border-white/10 shrink-0">
+        <div className="relative z-10 px-4 pt-7 pb-4 flex items-center justify-between border-b border-purple-200/30 dark:border-white/10 shrink-0">
           <button onClick={() => { setSelectedCharId(null); setNewMemoryText(''); setDecayMemoryId(null); setDetailTab('list'); }} className="text-purple-600 dark:text-purple-300 p-1 hover:bg-purple-100/50 dark:hover:bg-white/10 rounded-lg transition-colors">
             <ChevronLeft size={24} />
           </button>
@@ -150,14 +163,15 @@ export default function MemoryApp() {
         {/* Content */}
         <div className="relative z-10 flex-1 overflow-y-auto p-4 space-y-3">
 
-          {detailTab === 'starchart' && (
-            <div className={`${INS_CARD} rounded-xl p-4`}>
+          {detailTab === 'starchart' && (<>
+            <div className="space-y-3">
+              {/* Mood panel */}
+              <div className={`${INS_CARD} rounded-xl p-4`}>
+                <CurrentMoodPanel characterId={selectedCharId} />
+              </div>
+              <div className={`${INS_CARD} rounded-xl p-4`}>
               <EmotionStarChart
                 memories={bank}
-                showDecoration={showDecoration}
-                showForgotten={showForgotten}
-                onToggleDecoration={() => setShowDecoration(!showDecoration)}
-                onToggleForgotten={() => setShowForgotten(!showForgotten)}
               />
               {/* Decay curve for selected memory */}
               <div className="mt-3 pt-3 border-t border-purple-200/30 dark:border-white/10">
@@ -167,7 +181,63 @@ export default function MemoryApp() {
                 <DecayCurve memory={decayMemoryId ? bank.find(m => m.id === decayMemoryId) || null : null} />
               </div>
             </div>
-          )}
+            </div>
+
+              {/* ── Feel (内心感受) ── */}
+              <div className={`${INS_CARD} rounded-xl p-4`}>
+                <div className="text-xs text-gray-400 mb-3 flex items-center gap-1">
+                  <Heart size={12} className="text-pink-400" />
+                  内心感受
+                  <span className="text-[10px] text-gray-300 dark:text-gray-600">({getFeelMemories(selectedCharId).length})</span>
+                </div>
+                {(() => {
+                  const feels = getFeelMemories(selectedCharId);
+                  if (!feels.length) return (
+                    <div className="text-center py-6">
+                      <div className="w-10 h-10 mx-auto mb-2 rounded-full bg-pink-50 dark:bg-pink-500/10 flex items-center justify-center">
+                        <Heart size={18} className="text-pink-300 dark:text-pink-400" />
+                      </div>
+                      <p className="text-[11px] text-gray-400">还没有内心感受</p>
+                      <p className="text-[9px] text-gray-300 dark:text-gray-600 mt-1">每天凌晨角色会自动消化记忆</p>
+                    </div>
+                  );
+                  // Group by date
+                  const groups: Record<string, typeof feels> = {};
+                  for (const f of feels) {
+                    const date = new Date(f.createdAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
+                    if (!groups[date]) groups[date] = [];
+                    groups[date].push(f);
+                  }
+                  return Object.entries(groups).map(([date, items]) => (
+                    <div key={date} className="mb-3 last:mb-0">
+                      <div className="text-[10px] text-gray-400 mb-1.5 font-medium">{date}</div>
+                      <div className="space-y-1.5">
+                        {items.map(f => {
+                          const expanded = expandedFeelIds.has(f.id);
+                          const isLong = f.content.length > 30;
+                          const displayText = expanded || !isLong ? f.content : f.content.slice(0, 28) + '…';
+                          return (
+                            <div key={f.id} className="bg-pink-50/50 dark:bg-white/5 rounded-xl p-2.5">
+                              <div className="text-[11px] text-gray-600 dark:text-gray-300 leading-relaxed">
+                                {displayText}
+                                {isLong && (
+                                  <button
+                                    onClick={() => toggleFeelExpand(f.id)}
+                                    className="ml-1 text-[9px] text-pink-400 hover:text-pink-500"
+                                  >
+                                    {expanded ? '收起' : '展开'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+          </>)}
 
           {detailTab === 'list' && <>
           <div className={`${INS_CARD} rounded-xl p-3 space-y-2`}>
@@ -229,48 +299,72 @@ export default function MemoryApp() {
             </div>
           ) : (
             filteredMemories.map(({ entry, score }) => (
-              <div
-                key={entry.id}
-                className={`${INS_CARD} rounded-xl p-3.5 hover:shadow-md transition-shadow cursor-pointer ${
-                  decayMemoryId === entry.id ? 'ring-2 ring-purple-400' : ''
-                }`}
-                onClick={() => setDecayMemoryId(decayMemoryId === entry.id ? null : entry.id)}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-gray-700 dark:text-gray-200 font-medium">{entry.summary}</div>
-                    <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${TYPE_COLORS[entry.type] || 'bg-gray-100 text-gray-500'}`}>
-                        {TYPE_LABELS[entry.type] || entry.type}
-                      </span>
-                      <span className="text-[10px] text-gray-400">重要性 {entry.importance}</span>
-                      <span className="text-[10px] text-gray-400">得分 {score.toFixed(1)}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <div className="flex items-center gap-1">
-                        <Heart size={10} className={entry.valence > 0.6 ? 'text-red-400' : entry.valence < 0.4 ? 'text-gray-400' : 'text-gray-300'} />
-                        <div className="w-12 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
-                          <div className="h-full rounded-full transition-all" style={{
-                            width: `${entry.valence * 100}%`,
-                            backgroundColor: entry.valence > 0.6 ? '#f87171' : entry.valence < 0.4 ? '#9ca3af' : '#d1d5db'
-                          }} />
+              <div key={entry.id}>
+                <div
+                  className={`${INS_CARD} rounded-xl p-3.5 hover:shadow-md transition-shadow cursor-pointer ${
+                    decayMemoryId === entry.id ? 'ring-2 ring-purple-400' : ''
+                  }`}
+                  onClick={() => setDecayMemoryId(decayMemoryId === entry.id ? null : entry.id)}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-gray-700 dark:text-gray-200 font-medium">
+                        {entry.summary}
+                        <div className="inline-flex items-center gap-1 ml-1.5 align-middle">
+                          {entry.pinned && <span className="text-[9px] bg-amber-100 dark:bg-amber-500/20 text-amber-500 px-1.5 py-0.5 rounded-full">已固定</span>}
+                          {entry.digested && !entry.pinned && <span className="text-[9px] bg-gray-100 dark:bg-white/5 text-gray-400 px-1.5 py-0.5 rounded-full">已消化</span>}
                         </div>
                       </div>
-                      <span className="text-[10px] text-gray-400">
-                        {new Date(entry.createdAt).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                      <span className="text-[10px] text-gray-300 dark:text-gray-500">{entry.accessCount}次访问</span>
+                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${TYPE_COLORS[entry.type] || 'bg-gray-100 text-gray-500'}`}>
+                          {TYPE_LABELS[entry.type] || entry.type}
+                        </span>
+                        <span className="text-[10px] text-gray-400">重要性 {entry.importance}</span>
+                        <span className="text-[10px] text-gray-400">得分 {score.toFixed(1)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <div className="flex items-center gap-1">
+                          <Heart size={10} className={entry.valence > 0.6 ? 'text-red-400' : entry.valence < 0.4 ? 'text-gray-400' : 'text-gray-300'} />
+                          <div className="w-12 h-1.5 bg-gray-200 dark:bg-white/10 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{
+                              width: `${entry.valence * 100}%`,
+                              backgroundColor: entry.valence > 0.6 ? '#f87171' : entry.valence < 0.4 ? '#9ca3af' : '#d1d5db'
+                            }} />
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-gray-400">
+                          {new Date(entry.createdAt).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <span className="text-[10px] text-gray-300 dark:text-gray-500">{entry.accessCount}次访问</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); updateCharacterMemory(selectedCharId, entry.id, { pinned: !entry.pinned }); }}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          entry.pinned
+                            ? 'text-amber-400 hover:text-amber-500 bg-amber-50 dark:bg-amber-500/10'
+                            : 'text-gray-300 dark:text-gray-600 hover:text-amber-400 hover:bg-amber-50/50 dark:hover:bg-amber-500/5'
+                        }`}
+                      >
+                        {entry.pinned ? <Pin size={14} /> : <PinOff size={14} />}
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPendingDeleteId(entry.id); }}
+                        className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <X size={14} />
+                      </button>
                     </div>
                   </div>
-                  <button
-                    onClick={() => deleteCharacterMemory(selectedCharId, entry.id)}
-                    className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/20 text-gray-400 hover:text-red-500 transition-colors shrink-0"
-                  >
-                    <X size={14} />
-                  </button>
                 </div>
-              </div>
-            ))
+                {/* Decay curve shown inline when selected */}
+                {decayMemoryId === entry.id && (
+                  <div className="ml-4 pl-4 border-l-2 border-purple-200 dark:border-purple-700 mt-1 mb-1">
+                    <DecayCurve memory={entry} />
+                  </div>
+                )}
+              </div>))
           )}
           </>}
         </div>
@@ -284,6 +378,39 @@ export default function MemoryApp() {
             </span>
           </div>
         </div>
+
+        {/* Memory delete confirmation modal */}
+        {pendingDeleteId && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setPendingDeleteId(null)} />
+            <div className={`relative bg-white dark:bg-[#1a1a1a] rounded-2xl p-6 w-[280px] shadow-2xl`}>
+              <h3 className={`text-lg font-bold mb-2 text-slate-800 dark:text-white`}>删除记忆</h3>
+              <p className={`text-sm mb-6 text-gray-500 dark:text-gray-400`}>
+                确定要永久删除这条记忆吗？角色将不再记得这条内容，此操作不可恢复。
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPendingDeleteId(null)}
+                  className={`flex-1 py-3 rounded-xl font-medium transition-colors bg-gray-100 dark:bg-white/10 text-slate-700 dark:text-white hover:bg-gray-200 dark:hover:bg-white/20`}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={() => {
+                    if (pendingDeleteId) {
+                      deleteCharacterMemory(selectedCharId, pendingDeleteId);
+                      setPendingDeleteId(null);
+                    }
+                  }}
+                  className="flex-1 py-3 rounded-xl font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     );
   }
@@ -300,7 +427,7 @@ export default function MemoryApp() {
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImportBg} />
 
       {/* Header */}
-      <div className="relative z-10 px-4 pt-12 pb-4 flex items-center justify-between shrink-0">
+      <div className="relative z-10 px-4 pt-7 pb-4 flex items-center justify-between shrink-0">
         <button onClick={closeApp} className="text-purple-600 dark:text-purple-300 p-1 hover:bg-purple-100/50 dark:hover:bg-white/10 rounded-lg transition-colors">
           <ChevronLeft size={24} />
         </button>
@@ -408,6 +535,53 @@ export default function MemoryApp() {
           </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ── Current Mood Panel ──
+
+const MOOD_ICONS: Record<string, string> = {
+  elated: '🤩', happy: '😊', content: '😌', neutral: '😐',
+  melancholy: '😔', sad: '😢', irritable: '😤', anxious: '😰', tired: '😴',
+};
+const MOOD_LABELS: Record<string, string> = {
+  elated: '兴高采烈', happy: '开心', content: '心情不错', neutral: '平静',
+  melancholy: '忧郁', sad: '悲伤', irritable: '烦躁', anxious: '焦虑', tired: '疲惫',
+};
+
+function CurrentMoodPanel({ characterId }: { characterId: string }) {
+  const mood = getCurrentMood(characterId);
+  const char = useAppStore(s => s.characters[characterId]);
+
+  return (
+    <div>
+      <div className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+        <Heart size={12} className="text-pink-400" />
+        当前心情
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="text-3xl">{MOOD_ICONS[mood.overall] || '😐'}</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
+            {MOOD_LABELS[mood.overall] || '平静'}
+            <span className="text-xs font-normal text-gray-400">
+            </span>
+          </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {mood.summary}
+          </div>
+          <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-400">
+            <span>唤醒: {mood.arousalLevel === 'high' ? '高' : mood.arousalLevel === 'low' ? '低' : '中'}</span>
+            <span>PA {mood.paScore.toFixed(1)}</span>
+            <span>NA {mood.naScore.toFixed(1)}</span>
+          </div>
+        </div>
+      </div>
+      <p className="text-[10px] text-gray-400/70 mt-2 leading-relaxed">
+        心情会随对话内容变化，并影响角色的回复语气
+      </p>
     </div>
   );
 }

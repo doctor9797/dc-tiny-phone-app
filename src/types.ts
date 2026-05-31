@@ -84,7 +84,7 @@ export interface IFSession {
   updatedAt: number;
 }
 
-export type AppName = 'wechat' | 'music' | 'settings' | 'tarot' | 'bottle' | 'worldbook' | 'liarsbar' | 'jubensha' | 'ifapp' | 'vocab' | 'copet' | 'focus' | 'reader' | 'calendar' | 'billing' | 'beautify' | 'news' | 'desktoppet' | 'writing' | 'diary' | 'mailbox' | 'forum' | 'couplediary' | 'movie' | 'memory' | null;
+export type AppName = 'wechat' | 'music' | 'settings' | 'tarot' | 'bottle' | 'worldbook' | 'liarsbar' | 'jubensha' | 'ifapp' | 'vocab' | 'copet' | 'focus' | 'reader' | 'calendar' | 'billing' | 'beautify' | 'news' | 'desktoppet' | 'writing' | 'diary' | 'mailbox' | 'forum' | 'couplediary' | 'movie' | 'memory' | 'hunter' | 'marriage' | 'weather' | 'dream' | null;
 
 export interface CalendarPlan {
   id: string;
@@ -125,6 +125,10 @@ export interface Character {
   relationship: string;
   interactionMode: string;
   personality: string;
+  experience?: string;
+  /** 人物原著档案：生日、忌日、关键事件、经典台词等结构化设定 */
+  biography?: string;
+  viewOnMe?: string;
   userNickname: string;
   affection: number;
   remark: string;
@@ -138,11 +142,29 @@ export interface Character {
   // 主动消息相关
   lastUserMessageAt?: number; // 最后一次用户消息的时间
   followUpSent?: boolean; // 是否已发送过跟进消息
+  pendingReAddAt?: number; // 好友删除后，延迟重新添加的时间戳
+  pendingReAddContext?: string; // 删除前的聊天上下文，用于生成重新添加的消息
+  pendingAppMessage?: string; // 被删除期间收到的app消息，通过好友后用户回复时投递
   // 朋友圈相关
   momentsEnabled?: boolean; // 是否开启朋友圈
   momentsFrequency?: number; // 每天发朋友圈次数 (1-5)
   momentsBackground?: string; // 朋友圈背景图
   lastMomentAt?: number; // 上次发朋友圈的时间
+  // 主动分享相关
+  shareEnabled?: boolean; // 是否主动分享
+  shareFrequency?: number; // 分享频率 1-5 (次/天)
+  lastShareAt?: number; // 上次分享时间
+  lastDreamShareAt?: number; // 上次分享梦境的时间
+  // 婚姻相关
+  relationshipStatus?: 'single' | 'dating' | 'engaged' | 'married' | 'divorced';
+  proposalStatus?: 'none' | 'pending' | 'accepted' | 'rejected';
+  proposalMessage?: string; // the user's proposal message text
+  proposalTimestamp?: number;
+  marriageHistory?: MarriageRecord[];
+  /** 角色的原始语言签名（如 "Bruce Wayne"），用于结婚证上手写签名。不设置则用 name 字段 */
+  signatureName?: string;
+  /** 出生日期，格式 YYYY-MM-DD，用于结婚证显示 */
+  birthDate?: string;
 }
 
 export interface Message {
@@ -155,7 +177,7 @@ export interface Message {
   amount?: number;
   transferStatus?: 'pending' | 'received' | 'returned';
   giftName?: string;
-  giftStatus?: 'unopened' | 'opened';
+  giftStatus?: 'unopened' | 'opened' | 'rejected';
   audioUrl?: string;
   audioLabel?: string;
   audioDuration?: number;
@@ -245,6 +267,7 @@ export interface UserSettings {
   persona: {
     name: string;
     age: string;
+    birthDate?: string;
     profession: string;
     identity: string;
     appearance: string;
@@ -261,7 +284,11 @@ export interface UserSettings {
   showDock?: boolean;
   appNameOverrides?: Record<string, string>;
   timeOffsetMinutes?: number;
+  lastDreamDate?: string;
   activeWeChatCharId?: string | null;
+  activeWeChatTab?: 'chats' | 'contacts' | null;
+  weatherCity?: string;
+  lastWeatherAlertDate?: string;
   desktopPet?: {
     enabled: boolean;
     characterId: string | null;
@@ -270,6 +297,7 @@ export interface UserSettings {
     remindMode: boolean;
     lastDisturbMessageAt?: number;
     lastReminderEventId?: string | null;
+    petColor?: string;
   };
   mailbox?: {
     enabledSenderIds: string[];
@@ -278,12 +306,15 @@ export interface UserSettings {
   };
   forum?: {
     userHandle?: string;
+    avatar?: string;
     blockedHandles?: string[];
     postRefreshMinutes?: number;
     replyRefreshMinutes?: number;
     lastPostRefreshAt?: number;
     lastReplyRefreshAt?: number;
   };
+  customFontData?: string;
+  customFontName?: string;
 }
 
 export interface WritingCharacterFeedback {
@@ -351,6 +382,19 @@ export interface CoupleDiary {
   startDate: number;
   specialEvents: SpecialEvent[];
   reminders: Reminder[];
+  whispers?: WhisperMessage[];
+  timeCapsules?: TimeCapsule[];
+  wishlist?: WishlistItem[];
+  locations?: LocationCheckin[];
+  galleryPhotos?: string[];
+  heartbeatLog?: HeartbeatRecord[];
+}
+
+export interface HeartbeatRecord {
+  id: string;
+  senderId: 'user' | 'partner';
+  duration: number;
+  createdAt: number;
 }
 
 export interface SpecialEvent {
@@ -373,6 +417,8 @@ export interface Reminder {
   days: number[];
   notifyBefore: number;
   enabled: boolean;
+  month?: number;
+  day?: number;
 }
 
 export interface CoupleDiaryEntry {
@@ -387,6 +433,45 @@ export interface CoupleDiaryEntry {
   backgroundColor?: string;
   isSpecialEvent?: boolean;
   eventId?: string;
+}
+
+export interface WhisperMessage {
+  id: string;
+  senderId: 'user' | 'partner';
+  text: string;
+  createdAt: number;
+  scheduledFor?: number;
+  readAt?: number;
+}
+
+export interface TimeCapsule {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  openAt: number;
+  openCondition: 'date' | 'anniversary';
+  locked: boolean;
+  openedAt?: number;
+  photos?: string[];
+}
+
+export interface WishlistItem {
+  id: string;
+  text: string;
+  createdBy: 'user' | 'partner';
+  createdAt: number;
+  completed: boolean;
+  completedAt?: number;
+}
+
+export interface LocationCheckin {
+  id: string;
+  name: string;
+  createdBy?: 'user' | 'partner';
+  timestamp: number;
+  photo?: string;
+  note?: string;
 }
 
 export interface MailLetter {
@@ -420,6 +505,7 @@ export interface ForumComment {
   createdAt: number;
   replyToId?: string;
   replyToHandle?: string;
+  likedBy?: string[];
 }
 
 export interface ForumPost {
@@ -434,8 +520,22 @@ export interface ForumPost {
   updatedAt: number;
   comments: ForumComment[];
   visitCount: number;
+  likeCount: number;
+  repostCount: number;
+  likedBy: string[];
+  repostedBy: string[];
+  parentPostId?: string;
   subscribed?: boolean;
   nextReplyAt?: number;
+  /** Characters watching this post for user reply before following up on WeChat */
+  characterFollowUps?: Array<{
+    characterId: string;
+    handle: string;
+    commentId: string;
+    recognizedAt: number;
+    followUpAt: number;
+    followUpSent: boolean;
+  }>;
 }
 
 export interface ForumDirectMessage {
@@ -458,8 +558,10 @@ export interface CharacterCard {
   avatar: string;
   personality: string;
   experience: string;
+  biography?: string;
   relationship: string;
   viewOnMe: string;
+  birthDate?: string;
   forceRequirements?: string;
   affection?: number;
   userNickname?: string;
@@ -479,6 +581,8 @@ export interface FriendRequest {
   id: string;
   characterCard: CharacterCard;
   status: 'pending' | 'accepted';
+  reAddMessage?: string;
+  pendingMessage?: string; // message queued while friend was deleted
 }
 
 export interface ChatGroup {
@@ -690,6 +794,8 @@ export interface MovieSession {
   title: string;
   videoUrl: string;
   videoDbKey?: string;
+  isBilibili?: boolean;
+  bilibiliBvid?: string;
   subtitleUrl?: string;
   subtitleContent?: string;
   currentTime: number;
@@ -717,7 +823,7 @@ export interface AppState {
   moments: Moment[];
   songs: Song[];
   worldSettings: WorldSetting[];
-  bottles: { id: string; text: string; imageUrl?: string; musicUrl?: string; reply?: string; timestamp: number }[];
+  bottles: { id: string; text: string; imageUrl?: string; reply?: string; timestamp: number }[];
   friendRequests: FriendRequest[];
   stickers: string[];
   copetData?: PetState | null;
@@ -750,12 +856,20 @@ export interface AppState {
   };
   characterMemoryBank: Record<string, CharacterMemoryEntry[]>; // keyed by characterId
   emotionEvents: EmotionEvent[];
+  takeoverMailboxLetterId: string | null;
+  forumNavigateToPostId: string | null;
+  takeoverForumPostId: string | null;
+  takeoverWritingArticleId: string | null;
+  activeWorldSettingId: string | null;
+  // ── Character Phone Check (角色查我手机) ──
+  charPhoneCheck: CharPhoneCheckState;
+  impersonatedMessages: ImpersonatedMessage[];
 }
 
 export interface CharacterMemoryEntry {
   id: string;
   characterId: string;
-  type: 'fact' | 'conversation' | 'event' | 'observation' | 'preference';
+  type: 'fact' | 'conversation' | 'event' | 'observation' | 'preference' | 'feel';
   content: string;
   summary: string;
   tags: string[];
@@ -771,6 +885,10 @@ export interface CharacterMemoryEntry {
   resolved?: 0 | 1;
   category?: string;
   priorVersions?: { content: string; mergedAt: number }[];
+  // Ombre-Brain v2 additions
+  pinned?: boolean;         // pinned memories: weight 999, never decay, never merge
+  sourceBucket?: string;    // for feel entries: links back to the source memory being processed
+  digested?: boolean;       // marked when dream() has processed this memory (accelerated fading)
 }
 
 // ── Phase 2: Three-Layer Emotion Model ──
@@ -788,9 +906,88 @@ export interface EmotionEvent {
   timestamp: number;
 }
 
+// ── Dream/梦 Archive ──
+
+export interface DreamEntry {
+  id: string;
+  characterId: string;
+  dreamNarrative: string;    // first-person prose essay
+  dreamTitle: string;        // short dream title
+  condensedSummary: string;  // one-line gist
+  valence: number;           // 0~1 overall emotional tone
+  arousal: number;           // 0~1 intensity
+  createdAt: number;         // date of the dream
+  sourceMemoryIds?: string[]; // memory IDs used (internal reference)
+}
+
+export type MarriageFormat = 'us' | 'chinese';
+
+export interface MarriageRecord {
+  id: string;
+  characterId: string;
+  type: 'marriage' | 'divorce';
+  format: MarriageFormat;
+  issuedAt: number;
+  endedAt?: number;
+  certDbKey?: string;
+  isReissue?: boolean;
+}
+
 export interface TarotRecord {
   id: string;
   cards: { name: string; keyword: string; isReversed: boolean }[];
   interpretation: string;
+  timestamp: number;
+}
+
+// ── Character Phone Check (角色查我手机) ──
+
+/** 角色查我手机的模式 */
+export type CharPhoneCheckMode = 'direct' | 'agreed' | 'snatched';
+
+/** 角色手机叠加层的全局状态 */
+export interface CharPhoneCheckState {
+  isActive: boolean;
+  characterId: string | null;
+  mode: CharPhoneCheckMode | null;
+  /** UI 上显示的阶段描述（如"正在浏览你的聊天记录…"） */
+  phase: string;
+  /** 抢夺模式下 10 秒倒计时 */
+  countdown: number;
+  /** 是否可抢回手机 */
+  canGrabBack: boolean;
+}
+
+/** 导航动作类型 */
+export type NavActionType =
+  | 'openApp'       // 打开应用，payload: AppName
+  | 'scroll'        // 滚动，payload: { direction: 'up' | 'down', times?: number }
+  | 'wait'          // 等待，payload: number (ms)
+  | 'back'          // 返回
+  | 'openChat'      // 打开聊天，payload: string (characterId)
+  | 'openMoments'   // 打开朋友圈
+  | 'sendImpersonatedMsg' // 冒充发消息
+  | 'sendMail';     // 发信
+
+/** 导航动作 */
+export interface NavAction {
+  id: string;
+  type: NavActionType;
+  payload?: any;
+  /** 动画时长（ms） */
+  duration: number;
+  /** UI 说明文字 */
+  label: string;
+}
+
+/** 冒充消息记录 */
+export interface ImpersonatedMessage {
+  id: string;
+  targetCharacterId: string;
+  targetName: string;
+  message: string;
+  reply?: string;
+  /** 对方是否认出被顶替 */
+  recognized: boolean;
   timestamp: number;
 }

@@ -1,12 +1,27 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '../../store';
-import { ChevronLeft, MoreHorizontal, Plus, Image as ImageIcon, Play, Smile, Volume2, Send } from 'lucide-react';
+import { ChevronLeft, MoreHorizontal, Plus, Image as ImageIcon, Play, Smile, Volume2, Send, Phone } from 'lucide-react';
 import { generateAIResponse, getCharacterReply, textToSpeech, speechToText, translateText } from '../../lib/ai';
 import CharacterSettings from './CharacterSettings';
 import CharacterMoments from './CharacterMoments';
 import ImageUploader from '../ImageUploader';
 import { Character, Message } from '../../types';
 import VoiceRecorderButton from './VoiceRecorderButton';
+import VoiceCall from './VoiceCall';
+import { isPhoneCheckTrigger } from '../PhoneCheck/data';
+
+/** 检测用户是否在说"角色看我的手机"类关键词 */
+function isMyPhoneCheckTrigger(text: string): boolean {
+  const triggers = [
+    '看我的手机', '看我手机', '给你看我的手机',
+    '检查我的手机', '查我手机', '查看我的手机',
+    '查查我的手机', '查查我手机',
+    '给你看手机', '你看我手机', '你看看我手机',
+    '给你检查手机',
+  ];
+  const clean = text.trim().replace(/[，。！？、\s]/g, '');
+  return triggers.some(t => clean.includes(t));
+}
 
 const getT = (theme: string) => {
   const t: Record<string, any> = {
@@ -124,7 +139,7 @@ const maybeCharacterGiftMessage = async (character: Character, userMessage: stri
   const text = userMessage.trim();
   if (!text) return null;
 
-  const explicitGiftContext = /生日|诞辰|礼物|送我|纪念日|节日|圣诞|新年|跨年|毕业|考试|上岸|生病|不舒服|谢谢|辛苦|安慰/.test(text);
+  const explicitGiftContext = /诞辰|礼物|送我|纪念日|节日|圣诞|新年|跨年|毕业|考试|上岸|生病|不舒服|谢谢|辛苦|安慰/.test(text);
   const canGiftByRelation = (character.affection || 0) >= 65;
   const randomGiftChance = (character.affection || 0) >= 80 ? 0.18 : 0.08;
 
@@ -140,6 +155,16 @@ const resolveOpenedGiftName = (character: Character, giftName?: string) => {
   return randomGiftFallback(character);
 };
 
+/** 解析转账文本，安全提取金额和完整备注 */
+const parseTransferText = (text: string) => {
+  const cleaned = text.replace('[转账] ', '');
+  const amountMatch = cleaned.match(/^¥(\d+(\.\d+)?)/);
+  const amount = amountMatch ? amountMatch[0] : '';
+  const separatorIndex = cleaned.indexOf(' - ');
+  const note = separatorIndex >= 0 ? cleaned.slice(separatorIndex + 3) : '转账';
+  return { amount, note };
+};
+
 const getGiftOpenNote = (giftName: string) => {
   if (/红茶|司康/.test(giftName)) return '看起来是认真挑过的，包装也很体面。';
   if (/黑胶|唱片/.test(giftName)) return '唱片封套很新，像是特地为你准备的。';
@@ -150,7 +175,7 @@ const getGiftOpenNote = (giftName: string) => {
   return '礼物被你收下了。';
 };
 
-export default function ChatRoom({ characterId, onBack }: { characterId: string, onBack: () => void }) {
+export default function ChatRoom({ characterId, onBack, onPhoneCheckRequest, onCharPhoneCheckRequest, onCharPhoneCheckJealousy }: { characterId: string, onBack: () => void, onPhoneCheckRequest?: (characterId: string, message: string) => void, onCharPhoneCheckRequest?: (characterId: string, message: string) => void, onCharPhoneCheckJealousy?: (characterId: string) => void }) {
   const { characters, chats, sendMessage, receiveMessage, settings, updateWeChatBalance, updateChatMessage, sendAdvancedMessage, updateCharacter } = useAppStore();
   const character = characters[characterId];
   const [inputText, setInputText] = useState('');
@@ -159,6 +184,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const [showCharacterMoments, setShowCharacterMoments] = useState(false);
   
   const [showAttach, setShowAttach] = useState(false);
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [showStickers, setShowStickers] = useState(false);
   const [attachType, setAttachType] = useState<'transfer' | 'gift' | null>(null);
   const [activeGiftMessage, setActiveGiftMessage] = useState<Message | null>(null);
@@ -249,9 +275,10 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   const cardClass = `mx-2 rounded-[18px] overflow-hidden flex flex-col w-[220px] border shadow-sm ${
     isDark ? 'bg-[#2b2b2b] border-white/10' : 'bg-[#f3f4f6] border-gray-300/80'
   }`;
-  
-  const transferCardClass = `mx-2 rounded-[18px] overflow-hidden flex flex-col w-[220px] border shadow-sm ${t.gift}`;
-  const giftCardClass = `mx-2 rounded-[18px] overflow-hidden flex flex-col w-[220px] border shadow-sm ${t.gift}`;
+
+  // 白色半透明毛玻璃卡片 + 文字阴影，任何背景都清晰可读
+  const glassCardClass = `relative rounded-[18px] overflow-hidden flex flex-col w-[220px] border shadow-xl border-white/30 text-white`;
+  const glassCardBg = { background: 'rgba(255,255,255,0.25)', backdropFilter: 'blur(16px) saturate(150%)' as const, WebkitBackdropFilter: 'blur(16px) saturate(150%)' as const };
 
   // 清理定时器
   const clearFollowUpTimer = () => {
@@ -340,7 +367,45 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
 
   const sendActionFollowup = async (prompt: string) => {
     try {
-      const reply = (await getCharacterReply(characterId, prompt)).trim();
+      const state = useAppStore.getState();
+      // Read world book card for accurate relationship/personality
+      let rel = character.relationship || '';
+      let cardPersonality = character.personality || '';
+      let cardNickname = character.userNickname || '你';
+      let cardAffection = character.affection ?? 50;
+      let cardViewOnMe = '';
+      let cardInteractionMode = '';
+      let cardForceReq = '';
+      for (const ws of state.worldSettings) {
+        const found = ws.characters.find(c => c.id === characterId);
+        if (found) {
+          rel = found.relationship || rel;
+          cardPersonality = found.personality || cardPersonality;
+          cardNickname = found.userNickname || cardNickname;
+          cardAffection = found.affection ?? cardAffection;
+          cardViewOnMe = found.viewOnMe || '';
+          cardInteractionMode = found.interactionMode || '';
+          cardForceReq = found.forceRequirements || '';
+          break;
+        }
+      }
+      const bank = state.characterMemoryBank[characterId] || [];
+      const recentMems = bank.slice(-5).map((m: any) => m.summary || m.content).filter(Boolean).join('\n');
+      const moodInfo = ''; // Could add mood if needed
+      const systemMsg = [
+        '你现在扮演角色：' + character.name + '。',
+        '性格：' + cardPersonality + '。',
+        '你对用户的称呼：' + cardNickname + '。',
+        '你与用户的关系：' + rel + '（⚠️严格按此关系定位来称呼用户！恋人要亲密，家人要亲切，朋友要友好，同事要客气，绝不能叫错！）。',
+        '好感度：' + cardAffection + '/100。',
+        cardViewOnMe ? '你对用户的看法：' + cardViewOnMe : '',
+        cardInteractionMode ? '相处模式：' + cardInteractionMode + '——你必须严格按此相处模式对待我。' : '',
+        recentMems ? '记忆：\n' + recentMems + '\n（不记得说不知道）' : '',
+        cardForceReq ? '【强制规则——必须100%遵守】' + cardForceReq : '',
+        '风格：像真人微信聊天，禁止括号/星号等动作描写。发2-4条短消息，用\\n\\n分隔。不以角色名/冒号开头，直接以文字开头。严禁第四面墙。',
+        settings.bilingual ? '必须双语：第一行中文，第二行英文。' : '',
+      ].filter(Boolean).join('\n');
+      const reply = (await generateAIResponse(prompt, systemMsg)).trim();
       if (reply) receiveMessage(characterId, reply);
     } catch {}
   };
@@ -513,12 +578,40 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
     const textToSend = textOverride !== undefined ? textOverride : inputText;
     if (!textToSend.trim() && !imgUrl && !stickerUrl) return;
 
+    // Character phone check trigger — character checks USER's phone
+    if (!imgUrl && !stickerUrl && isMyPhoneCheckTrigger(textToSend)) {
+      sendMessage(characterId, textToSend);
+      setInputText('');
+      onCharPhoneCheckRequest?.(characterId, textToSend);
+      return;
+    }
+
+    // Phone check trigger — user checks character's phone
+    if (!imgUrl && !stickerUrl && await isPhoneCheckTrigger(textToSend)) {
+      sendMessage(characterId, textToSend);
+      setInputText('');
+      onPhoneCheckRequest?.(characterId, textToSend);
+      return;
+    }
+
     setInputText('');
     setShowAttach(false);
     setAttachType(null);
 
-    const userTimestamp = Date.now();
-    sendMessage(characterId, textToSend, imgUrl, stickerUrl, userTimestamp);
+    // Split text by newlines and send each line as separate message
+    const lines = textToSend.split('\n').filter(l => l.trim() !== '');
+    if (lines.length === 0 && !imgUrl && !stickerUrl) return;
+
+    if (lines.length > 1 && !imgUrl && !stickerUrl) {
+      // Send each line as a separate message
+      const baseTimestamp = Date.now();
+      for (let i = 0; i < lines.length; i++) {
+        sendMessage(characterId, lines[i], undefined, undefined, baseTimestamp + i);
+      }
+    } else {
+      const userTimestamp = Date.now();
+      sendMessage(characterId, textToSend, imgUrl, stickerUrl, userTimestamp);
+    }
 
     pendingRepliesRef.current++;
     setIsTyping(true);
@@ -537,7 +630,8 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
       const reply = await getCharacterReply(characterId, promptText, { images });
       const parts = splitWechatReply(reply);
       const existingGiftPart = parts.find(part => part.startsWith('[礼物]'));
-      const shouldAddGift = !existingGiftPart && Math.random() < 0.1 && (character.affection || 0) >= 65;
+      const userAlreadyGivingGift = textToSend.includes('[礼物]');
+      const shouldAddGift = !existingGiftPart && !userAlreadyGivingGift && Math.random() < 0.1 && (character.affection || 0) >= 65;
       let giftPart: string | null = null;
       if (shouldAddGift) {
         giftPart = `[礼物] ${await generateCharacterGiftName(character, textToSend)}`;
@@ -561,6 +655,55 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
         if (i < finalParts.length - 1) {
           setIsTyping(true);
           await new Promise(r => setTimeout(r, 1500));
+        }
+      }
+
+      // 吃醋机制：AI 判断用户消息是否涉及和别人社交，然后决定是否触发
+      if (onCharPhoneCheckJealousy && (character as any).relationshipStatus?.match(/dating|engaged|married/)) {
+        const quickCheck = /朋友|同事|同学|出去|吃饭|喝酒|聚会|约会|见面|别人|他们?|约|找我?|一起|陪|送/.test(textToSend || '');
+        if (quickCheck) {
+          // 异步执行，不阻塞角色回复
+          (async () => {
+            try {
+              const judgment = await generateAIResponse(
+                `用户说：「${textToSend}」
+判断用户这句话是否提到和别人（除了聊天对象以外的人）的社交互动、约会、见面、活动。
+只需回复"是"或"否"。例如："我和朋友出去吃饭"→是、"有人约我看电影"→是、"周末和同事聚餐"→是、"今天好累"→否、"你在干嘛"→否、"晚安"→否。`
+              );
+              if (judgment?.includes('是')) {
+                const personality = (character.personality || '');
+                const jealousTraits = ['多疑', '吃醋', '占有', '控制', '敏感', '偏执', '不安全感', '猜疑'];
+                const matchCount = jealousTraits.filter(t => personality.includes(t)).length;
+                const chance = Math.min(0.15 + matchCount * 0.05, 0.35);
+                if (Math.random() < chance) {
+                  setTimeout(() => onCharPhoneCheckJealousy(characterId), 2000);
+                }
+              }
+            } catch {}
+          })();
+        }
+      }
+
+      // If user sent a gift, notify that character received it
+      if (textToSend.includes('[礼物]') && !imgUrl && !stickerUrl) {
+        const giftName = textToSend.replace('[礼物]', '').trim();
+        await new Promise(r => setTimeout(r, 800));
+        sendMessage(characterId, `[系统] ${character.remark || character.name}收下了你的礼物：${giftName}`);
+      }
+
+      // If user sent a transfer, auto-receive it
+      if (textToSend.includes('[转账]') && !imgUrl && !stickerUrl) {
+        const amtMatch = textToSend.match(/¥(\d+(\.\d+)?)/);
+        if (amtMatch) {
+          const currentChat = useAppStore.getState().chats[characterId] || [];
+          const userTransferMsg = [...currentChat].reverse().find(m =>
+            m.senderId === 'user' && m.text?.startsWith('[转账]') && m.transferStatus === 'pending'
+          );
+          if (userTransferMsg) {
+            updateChatMessage(characterId, userTransferMsg.id, { transferStatus: 'received' });
+          }
+          await new Promise(r => setTimeout(r, 800));
+          sendMessage(characterId, `[系统] ${character.remark || character.name}已收款 ${amtMatch[0]}`);
         }
       }
 
@@ -629,9 +772,10 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
   }
 
   return (
+    <>
     <div
       className="h-full flex flex-col dark:bg-black dark:text-gray-100 absolute inset-0 z-50"
-      style={{ background: character.background.startsWith('#') && character.background !== '#ffffff' && character.background !== '#f3f4f6' ? character.background : undefined, backgroundImage: !character.background.startsWith('#') ? `url(${character.background})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}
+      style={{ background: character.background?.startsWith('#') && character.background !== '#ffffff' && character.background !== '#f3f4f6' ? character.background : undefined, backgroundImage: character.background && !character.background?.startsWith('#') ? `url(${character.background})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}
     >
       <style>{`
         @keyframes voiceWave {
@@ -642,6 +786,8 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
           animation: voiceWave 0.7s ease-in-out infinite;
           transform-origin: center;
         }
+        .text-shadow-glass { text-shadow: 0 1px 2px rgba(0,0,0,0.82); }
+        .text-shadow-glass-sm { text-shadow: 0 0.5px 1px rgba(0,0,0,0.82); }
       `}</style>
       <div className="bg-gray-100/90 dark:bg-black/90 backdrop-blur px-4 pt-14 pb-3 flex items-center justify-between border-b dark:border-white/5 shrink-0 z-10">
         <button onClick={onBack} className="p-1 -ml-1 text-gray-800 dark:text-gray-100"><ChevronLeft size={24} /></button>
@@ -720,9 +866,9 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
                 <div 
                   className="w-10 h-10 rounded-md flex-shrink-0"
                   style={{ 
-                    background: isUser 
-                      ? (settings.wechatAvatar.startsWith('#') ? settings.wechatAvatar : `url(${settings.wechatAvatar}) center/cover`)
-                      : (character.avatar.startsWith('#') ? character.avatar : `url(${character.avatar}) center/cover`) 
+                    background: isUser
+                      ? (settings.wechatAvatar?.startsWith('#') ? settings.wechatAvatar : `url(${settings.wechatAvatar || ''}) center/cover`)
+                      : (character.avatar?.startsWith('#') ? character.avatar : `url(${character.avatar || ''}) center/cover`)
                   }}
                 />
                 
@@ -730,16 +876,17 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
                   <button
                     type="button"
                     onClick={() => setActiveTransferMessage(msg)}
-                    className={`${transferCardClass} text-left cursor-pointer active:scale-[0.99]`}
+                    className={glassCardClass + ' active:scale-[0.99]'}
+                    style={glassCardBg}
                   >
                     <div className="flex items-center gap-3 p-3.5">
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold shrink-0 ${t.gift}`}>¥</div>
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold shrink-0 bg-white/70 border border-white/80 text-gray-500 text-shadow-glass-sm">¥</div>
                       <div className="flex-1 overflow-hidden text-inherit">
-                        <div className="text-[15px] font-semibold leading-tight mb-0.5 truncate">{msg.text?.replace('[转账] ', '').split(' - ')[0]}</div>
-                        <div className={`text-[11px] truncate ${t.prim}`}>{msg.text?.includes(' - ') ? msg.text.split(' - ')[1] : '微信转账'}</div>
+                        <div className="text-left text-[15px] font-semibold leading-tight mb-0.5 truncate text-shadow-glass">{msg.text?.startsWith('[转账]') ? parseTransferText(msg.text).amount : msg.text}</div>
+                        <div className="text-left text-[11px] truncate text-gray-200 text-shadow-glass-sm">{msg.text?.startsWith('[转账]') ? parseTransferText(msg.text).note : '微信转账'}</div>
                       </div>
                     </div>
-                    <div className={`px-3.5 py-2 flex justify-between items-center text-[10px] border-t border-inherit ${t.prim}`}>
+                    <div className="px-3.5 py-2 flex justify-start items-center text-[10px] border-t border-white/15 text-gray-300 text-shadow-glass-sm">
                       <span>
                         {isUser
                           ? msg.transferStatus === 'returned' ? '已退回' : msg.transferStatus === 'received' ? '对方已收款' : '待对方收款'
@@ -753,30 +900,35 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
                   <button
                     type="button"
                     onClick={() => {
-                      if (!isUser && msg.giftStatus !== 'opened') {
+                      if (!isUser && msg.giftStatus !== 'opened' && msg.giftStatus !== 'rejected') {
                         const revealedGiftName = resolveOpenedGiftName(character, msg.giftName || msg.text.replace('[礼物]', '').trim());
                         updateChatMessage(characterId, msg.id, { giftStatus: 'opened', giftName: revealedGiftName });
-                        sendMessage(characterId, `[系统] 你领取了礼物：${revealedGiftName}`);
-                        void sendActionFollowup(`我刚刚收下并拆开了你送的礼物，发现里面是“${revealedGiftName}”。请你只用2到4条很短的微信消息，像真人一样回复我，内容要和我刚刚拆礼物这件事直接相关。`);
+                        sendMessage(characterId, `[系统] 你收下了${character.remark || character.name}送的礼物：${revealedGiftName}`);
+                        void sendActionFollowup(`用户收下了你送的礼物"${revealedGiftName}"。请作为${character.name}只用2到4条很短的微信消息回应，内容和你看到对方拆开礼物这件事直接相关，表达开心或询问感受。`);
                         setActiveGiftMessage({ ...msg, giftStatus: 'opened', giftName: revealedGiftName });
                         return;
                       }
                       setActiveGiftMessage(msg);
                     }}
-                    className={`${giftCardClass} text-left cursor-pointer active:scale-[0.99]`}
+                    className={glassCardClass + ' active:scale-[0.99]'}
+                    style={glassCardBg}
                   >
                     <div className="flex items-center gap-3 p-3.5">
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-lg shrink-0 ${t.gift}`}>🎁</div>
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-lg shrink-0 bg-white/70 border border-white/80 text-gray-500 text-shadow-glass-sm">🎁</div>
                       <div className="flex-1 overflow-hidden text-inherit">
-                        <div className="text-[15px] font-semibold leading-tight mb-0.5 truncate">{msg.giftStatus === 'opened' ? '已拆开的礼物' : '微信礼物'}</div>
-                        <div className={`text-[11px] truncate ${t.prim}`}>{msg.giftStatus === 'opened' ? (msg.giftName || msg.text?.replace('[礼物] ', '')) : msg.text?.replace('[礼物] ', '')}</div>
+                        <div className="text-left text-[15px] font-semibold leading-tight mb-0.5 truncate text-shadow-glass">{isUser ? '已送出的礼物' : msg.giftStatus === 'opened' ? '已拆开的礼物' : msg.giftStatus === 'rejected' ? '已拒收的礼物' : '微信礼物'}</div>
+                        <div className="text-left text-[11px] truncate text-gray-200 text-shadow-glass-sm">{msg.giftStatus === 'opened' ? (msg.giftName || msg.text?.replace('[礼物] ', '')) : msg.text?.replace('[礼物] ', '')}</div>
                       </div>
                     </div>
-                    <div className={`px-3.5 py-2 flex justify-between items-center text-[10px] border-t border-inherit ${t.prim}`}>
+                    <div className="px-3.5 py-2 flex justify-start items-center text-[10px] border-t border-white/15 text-gray-300 text-shadow-glass-sm">
                       <span>
                         {isUser
-                          ? msg.giftStatus === 'opened' ? '礼物已送出' : '待对方领取'
-                          : msg.giftStatus === 'opened' ? '礼物已拆开' : '点击拆开礼物'}
+                          ? msg.giftStatus === 'opened' ? '礼物已送出'
+                            : msg.giftStatus === 'rejected' ? '对方已拒收'
+                            : '待对方领取'
+                          : msg.giftStatus === 'opened' ? '礼物已拆开'
+                            : msg.giftStatus === 'rejected' ? '已拒收'
+                            : '点击拆开礼物'}
                       </span>
                     </div>
                   </button>
@@ -919,7 +1071,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
             <div className="flex max-w-[75%] flex-row">
               <div 
                 className="w-10 h-10 rounded-md flex-shrink-0"
-                style={{ background: character.avatar.startsWith('#') ? character.avatar : `url(${character.avatar}) center/cover` }}
+                style={{ background: character.avatar?.startsWith('#') ? character.avatar : `url(${character.avatar || ''}) center/cover` }}
               />
               <div className="mx-2 p-3 rounded-lg text-sm bg-white dark:bg-[#2c2c2c] dark:text-gray-300 text-gray-500">
                 正在输入...
@@ -944,12 +1096,17 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
           >
             <Smile size={28} />
           </button>
-          <input 
-            type="text"
+          <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            className="flex-1 min-w-0 h-10 bg-white dark:bg-[#2c2c2c] dark:text-gray-100 rounded-lg px-3 outline-none text-[15px]"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            rows={1}
+            className="flex-1 min-w-0 h-10 bg-white dark:bg-[#2c2c2c] dark:text-gray-100 rounded-lg px-3 py-2 outline-none text-[15px] resize-none leading-5 overflow-y-auto"
             placeholder="发送消息..."
           />
           <button 
@@ -976,7 +1133,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
           <div className="mt-4 pt-4 border-t dark:border-white/5 h-48 overflow-y-auto w-full px-2 pb-2">
             <div className="grid grid-cols-4 gap-2">
               {useAppStore.getState().stickers.length === 0 ? (
-                <div className="col-span-4 text-center text-gray-400 text-sm py-4">暂无表情包，请在“我”中添加</div>
+                <div className="col-span-4 text-center text-gray-400 text-sm py-4">暂无表情包，请在"我"中添加</div>
               ) : (
                 useAppStore.getState().stickers.map((url, i) => (
                   <img 
@@ -993,25 +1150,31 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
         )}
 
         {showAttach && (
-          <div className="mt-4 pt-4 border-t dark:border-white/5 pb-2 px-4 h-48">
+          <div className="mt-4 pt-4 pb-2 px-4 h-48">
             <div className="grid grid-cols-4 gap-x-6 gap-y-4">
               <ImageUploader onImageSelected={(url) => handleSend('', url, undefined)} className="flex flex-col items-center gap-1 cursor-pointer">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm ${t.light}`}>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
                   <ImageIcon size={28} />
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">照片</span>
+                <span className="text-xs text-gray-500 mt-1">照片</span>
               </ImageUploader>
               <button onClick={() => { setAttachType('transfer'); setShowAttach(false); }} className="flex flex-col items-center gap-1">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm ${t.transfer}`}>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
                   <span className="font-bold text-2xl">¥</span>
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">转账</span>
+                <span className="text-xs text-gray-500 mt-1">转账</span>
               </button>
               <button onClick={() => { setAttachType('gift'); setShowAttach(false); }} className="flex flex-col items-center gap-1">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm ${t.gift}`}>
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
                   <span className="font-bold text-2xl">🎁</span>
                 </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">礼物</span>
+                <span className="text-xs text-gray-500 mt-1">礼物</span>
+              </button>
+              <button onClick={() => { setShowVoiceCall(true); setShowAttach(false); }} className="flex flex-col items-center gap-1">
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-sm bg-gray-300 dark:bg-gray-600 text-gray-600 dark:text-gray-300">
+                  <Phone size={26} />
+                </div>
+                <span className="text-xs text-gray-500 mt-1">语音通话</span>
               </button>
             </div>
           </div>
@@ -1019,30 +1182,30 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
       </div>
 
       {attachType === 'transfer' && (
-        <div className="absolute inset-0 z-50 bg-gray-100 dark:bg-black p-4 flex flex-col pt-14 text-slate-800 dark:text-white">
+        <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-lg p-4 flex flex-col pt-14 text-white">
           <div className="flex items-center gap-3 mb-6">
-            <button onClick={() => setAttachType(null)} className="p-1"><ChevronLeft size={24} /></button>
+            <button onClick={() => setAttachType(null)} className="p-1 text-white"><ChevronLeft size={24} /></button>
             <h2 className="text-xl font-medium">发起转账</h2>
           </div>
-          <div className="bg-white dark:bg-[#191919] rounded-2xl p-4 flex flex-col gap-4 shadow-sm">
-            <div className="flex items-center gap-2 border-b dark:border-white/10 pb-2">
+          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 flex flex-col gap-4 shadow-sm border border-white/10">
+            <div className="flex items-center gap-2 border-b border-white/10 pb-2">
               <span className="text-2xl font-medium">¥</span>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={transferAmount}
                 onChange={e => setTransferAmount(e.target.value)}
-                className="flex-1 text-3xl bg-transparent outline-none"
+                className="flex-1 text-3xl bg-transparent outline-none text-white placeholder-white/40"
                 placeholder="0.00"
               />
             </div>
-            <input 
-              type="text" 
+            <input
+              type="text"
               value={transferNote}
               onChange={e => setTransferNote(e.target.value)}
-              className="w-full bg-transparent outline-none text-sm text-gray-500"
+              className="w-full bg-transparent outline-none text-sm text-white/70 placeholder-white/40"
               placeholder="添加转账说明"
             />
-            <button 
+            <button
               onClick={() => {
                  setPendingAction(() => () => {
                    useAppStore.getState().updateWeChatBalance(useAppStore.getState().wechatBalance - parseFloat(transferAmount));
@@ -1051,7 +1214,7 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
                  setShowPayPass(true);
               }}
               disabled={!transferAmount || parseFloat(transferAmount) <= 0}
-              className="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg p-3 font-medium disabled:opacity-50 shadow-lg"
+              className="mt-4 bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-lg p-3 font-medium disabled:opacity-30 shadow-lg hover:bg-white/20"
             >
               转账
             </button>
@@ -1060,26 +1223,26 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
       )}
 
       {attachType === 'gift' && (
-        <div className="absolute inset-0 z-50 bg-gray-100 dark:bg-black p-4 flex flex-col pt-14 text-slate-800 dark:text-white">
+        <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-lg p-4 flex flex-col pt-14 text-white">
           <div className="flex items-center gap-3 mb-6">
-            <button onClick={() => setAttachType(null)} className="p-1"><ChevronLeft size={24} /></button>
+            <button onClick={() => setAttachType(null)} className="p-1 text-white"><ChevronLeft size={24} /></button>
             <h2 className="text-xl font-medium">送礼物</h2>
           </div>
-          <div className="bg-white dark:bg-[#191919] rounded-2xl p-4 flex flex-col gap-4 shadow-sm">
-            <input 
-              type="text" 
+          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 flex flex-col gap-4 shadow-sm border border-white/10">
+            <input
+              type="text"
               value={giftName}
               onChange={e => setGiftName(e.target.value)}
-              className="w-full border-b dark:border-white/10 p-2 text-lg bg-transparent outline-none"
+              className="w-full border-b border-white/10 p-2 text-lg bg-transparent outline-none text-white placeholder-white/40"
               placeholder="礼物名称 / 寄语"
             />
-            <button 
+            <button
               onClick={() => {
                  setPendingAction(() => () => handleSend(`[礼物] ${giftName || '神秘礼物'}`));
                  setShowPayPass(true);
               }}
               disabled={!giftName}
-              className="mt-4 bg-rose-500 hover:bg-rose-600 text-white rounded-lg p-3 font-medium disabled:opacity-50 shadow-lg"
+              className="mt-4 bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-lg p-3 font-medium disabled:opacity-30 shadow-lg hover:bg-white/20"
             >
               送礼物
             </button>
@@ -1089,62 +1252,105 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
 
       {activeGiftMessage && (
         <div className="absolute inset-0 z-[60] bg-black/35 flex items-end" onClick={() => setActiveGiftMessage(null)}>
-          <div className="w-full rounded-t-[2rem] bg-white dark:bg-[#191919] p-5 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="w-full rounded-t-[2rem] p-5 space-y-4 glass-frost border-t border-x border-white/30 text-white" onClick={e => e.stopPropagation()}>
             <div className="text-center">
               <div className="text-4xl mb-2">🎁</div>
               <div className="font-bold text-lg">{activeGiftMessage.giftName || activeGiftMessage.text.replace('[礼物]', '').trim()}</div>
-              <div className="text-sm text-gray-500 mt-1">{activeGiftMessage.senderId === 'user' ? '你送出的礼物' : `${character.remark || character.name}送给你的礼物`}</div>
-              <div className="text-sm text-slate-600 mt-3 leading-6">{getGiftOpenNote(activeGiftMessage.giftName || activeGiftMessage.text.replace('[礼物]', '').trim())}</div>
+              <div className="text-sm mt-1 text-white/60">{activeGiftMessage.senderId === 'user' ? '你送出的礼物' : `${character.remark || character.name}送给你的礼物`}</div>
+              <div className="text-sm mt-3 leading-6 text-white/70">{activeGiftMessage.senderId === 'user' ? '等待对方领取' : getGiftOpenNote(activeGiftMessage.giftName || activeGiftMessage.text.replace('[礼物]', '').trim())}</div>
             </div>
-            <button onClick={() => setActiveGiftMessage(null)} className="w-full rounded-2xl bg-slate-900 text-white py-3 font-bold">收下礼物</button>
+            {activeGiftMessage.senderId === 'user' ? (
+              <button onClick={() => setActiveGiftMessage(null)} className="w-full rounded-2xl py-3 font-bold cursor-default bg-white/15 border border-white/20 text-white/50">
+                已送出
+              </button>
+            ) : activeGiftMessage.giftStatus === 'opened' ? (
+              <button onClick={() => setActiveGiftMessage(null)} className="w-full rounded-2xl py-3 font-bold cursor-default bg-white/15 border border-white/20 text-white/50">
+                礼物已收下
+              </button>
+            ) : activeGiftMessage.giftStatus === 'rejected' ? (
+              <button onClick={() => setActiveGiftMessage(null)} className="w-full rounded-2xl py-3 font-bold cursor-default bg-white/15 border border-white/20 text-white/50">
+                已拒收
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => {
+                    const msg = activeGiftMessage;
+                    const revealedGiftName = resolveOpenedGiftName(character, msg.giftName || msg.text.replace('[礼物]', '').trim());
+                    updateChatMessage(characterId, msg.id, { giftStatus: 'opened', giftName: revealedGiftName });
+                    sendMessage(characterId, `[系统] 你收下了${character.remark || character.name}送的礼物：${revealedGiftName}`);
+                    void sendActionFollowup(`用户收下了你送的礼物"${revealedGiftName}"。请作为${character.name}只用2到4条很短的微信消息回应，内容和你看到对方拆开礼物这件事直接相关，表达开心或询问感受。`);
+                    setActiveGiftMessage({ ...msg, giftStatus: 'opened', giftName: revealedGiftName });
+                  }}
+                  className="rounded-2xl py-3 font-bold bg-white/20 border border-white/30 text-white hover:bg-white/30"
+                >
+                  收下礼物
+                </button>
+                <button
+                  onClick={() => {
+                    const msg = activeGiftMessage;
+                    const giftName = msg.giftName || msg.text.replace('[礼物]', '').trim();
+                    updateChatMessage(characterId, msg.id, { giftStatus: 'rejected' });
+                    sendMessage(characterId, `[系统] 你拒收了${character.remark || character.name}送的礼物：${giftName}`);
+                    void sendActionFollowup(`用户拒收了你送的礼物"${giftName}"。请作为${character.name}只用2到4条很短的微信消息回应。`);
+                    setActiveGiftMessage({ ...msg, giftStatus: 'rejected' });
+                  }}
+                  className="rounded-2xl py-3 font-bold bg-white/10 border border-white/20 text-white/70 hover:bg-white/20"
+                >
+                  拒收
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {activeTransferMessage && (
         <div className="absolute inset-0 z-[60] bg-black/35 flex items-end" onClick={() => setActiveTransferMessage(null)}>
-          <div className="w-full rounded-t-[2rem] bg-white dark:bg-[#191919] p-5 space-y-4" onClick={e => e.stopPropagation()}>
+          <div className="w-full rounded-t-[2rem] p-5 space-y-4 glass-frost border-t border-x border-white/30 text-white" onClick={e => e.stopPropagation()}>
             <div className="text-center">
               <div className="text-4xl mb-2">¥</div>
-              <div className="font-bold text-2xl">{activeTransferMessage.text.replace('[转账] ', '').split(' - ')[0]}</div>
-              <div className="text-sm text-gray-500 mt-1">{activeTransferMessage.text.includes(' - ') ? activeTransferMessage.text.split(' - ')[1] : '微信转账'}</div>
+              <div className="font-bold text-2xl">{parseTransferText(activeTransferMessage.text).amount}</div>
+              <div className="text-sm mt-1 text-white/60">{parseTransferText(activeTransferMessage.text).note}</div>
             </div>
 
             {activeTransferMessage.senderId !== 'user' && activeTransferMessage.transferStatus === 'pending' ? (
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => {
+                    const { amount, note } = parseTransferText(activeTransferMessage.text);
                     updateWeChatBalance(useAppStore.getState().wechatBalance + (activeTransferMessage.amount || 0));
                     updateChatMessage(characterId, activeTransferMessage.id, { transferStatus: 'received' });
-                    sendMessage(characterId, `[系统] 你已收款 ${activeTransferMessage.text.replace('[转账] ', '').split(' - ')[0]}`);
-                    void sendActionFollowup(`我刚刚收下了你发来的转账，金额是${activeTransferMessage.text.replace('[转账] ', '').split(' - ')[0]}。请你只用2到4条很短的微信消息，像真人一样回复我，内容要和我刚刚收款这件事直接相关。`);
+                    sendMessage(characterId, `[系统] 你已收款 ${amount}，备注：${note}`);
+                    void sendActionFollowup(`用户收下了你转给用户的${amount}，备注是「${note}」。请作为${character.name}只用2到4条很短的微信消息回应。`);
                     setActiveTransferMessage(null);
                   }}
-                  className="rounded-2xl bg-slate-900 text-white py-3 font-bold"
+                  className="rounded-2xl py-3 font-bold bg-white/20 border border-white/30 text-white hover:bg-white/30"
                 >
                   收款
                 </button>
                 <button
                   onClick={() => {
+                    const { amount, note } = parseTransferText(activeTransferMessage.text);
                     updateChatMessage(characterId, activeTransferMessage.id, { transferStatus: 'returned' });
-                    sendMessage(characterId, `[系统] 你已退还 ${activeTransferMessage.text.replace('[转账] ', '').split(' - ')[0]}`);
-                    void sendActionFollowup(`我刚刚把你发来的转账退还了，金额是${activeTransferMessage.text.replace('[转账] ', '').split(' - ')[0]}。请你只用2到4条很短的微信消息，像真人一样回复我，内容要和我刚刚退款这件事直接相关。`);
+                    sendMessage(characterId, `[系统] 你已退还 ${amount}，备注：${note}`);
+                    void sendActionFollowup(`用户退还了你转给用户的${amount}，备注是「${note}」。请作为${character.name}只用2到4条很短的微信消息回应。`);
                     setActiveTransferMessage(null);
                   }}
-                  className="rounded-2xl bg-stone-100 text-slate-700 py-3 font-bold"
+                  className="rounded-2xl py-3 font-bold bg-white/10 border border-white/20 text-white/70 hover:bg-white/20"
                 >
                   退还
                 </button>
               </div>
             ) : (
-              <div className="rounded-2xl bg-stone-100 dark:bg-white/5 px-4 py-4 text-sm text-center text-gray-500">
+              <div className="rounded-2xl px-4 py-4 text-sm text-center bg-white/15 border border-white/20 text-white/50">
                 {activeTransferMessage.senderId === 'user'
                   ? activeTransferMessage.transferStatus === 'returned' ? '这笔转账已退回。' : '这笔转账已经发出，等待对方收款。'
                   : activeTransferMessage.transferStatus === 'received' ? '这笔转账你已经收下了。' : '这笔转账已经退还。'}
               </div>
             )}
 
-            <button onClick={() => setActiveTransferMessage(null)} className="w-full rounded-2xl bg-stone-100 dark:bg-white/5 py-3 font-bold text-slate-700 dark:text-white">关闭</button>
+            <button onClick={() => setActiveTransferMessage(null)} className="w-full rounded-2xl py-3 font-bold bg-white/10 border border-white/20 text-white/70 hover:bg-white/20">关闭</button>
           </div>
         </div>
       )}
@@ -1186,6 +1392,18 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
         </div>
       )}
 
+      {showVoiceCall && (
+        <VoiceCall characterId={characterId} onEnd={(duration) => {
+          setShowVoiceCall(false);
+          if (duration !== undefined && duration > 0) {
+            const m = Math.floor(duration / 60);
+            const s = duration % 60;
+            const label = m > 0 ? `${m}分${s}秒` : `${s}秒`;
+            sendMessage(characterId, `[系统] 语音通话 ${label}`);
+          }
+        }} />
+      )}
+
       {activeAudioMenu && (
         <div 
           className="fixed z-[100] bg-slate-800 rounded-xl shadow-xl py-2 min-w-[160px]"
@@ -1222,5 +1440,6 @@ export default function ChatRoom({ characterId, onBack }: { characterId: string,
         </div>
       )}
     </div>
+    </>
   );
 }

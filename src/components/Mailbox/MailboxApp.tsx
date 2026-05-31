@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { useAppStore } from '../../store';
-import { ChevronLeft, Mail, PenSquare, Send, Settings2, Trash2, Images } from 'lucide-react';
+import { ChevronLeft, Mail, PenSquare, Send, Settings2, Trash2, Images, RefreshCw } from 'lucide-react';
 import { MailLetter } from '../../types';
 import { generateAIResponse } from '../../lib/ai';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 import ImageUploader from '../ImageUploader';
 
 type MailTab = 'inbox' | 'sent' | 'compose' | 'detail' | 'manage';
@@ -57,7 +58,7 @@ function LetterPaper({ letter, characterName }: { letter: MailLetter; characterN
 }
 
 export default function MailboxApp() {
-  const { closeApp, settings, updateSettings, mailboxLetters, characters, saveMailboxLetter, deleteMailboxLetter, markMailboxLetterRead, addActivityLog, setNotification } = useAppStore();
+  const { closeApp, settings, updateSettings, mailboxLetters, characters, characterMemoryBank, saveMailboxLetter, deleteMailboxLetter, markMailboxLetterRead, addCharacterMemory, addActivityLog, setNotification } = useAppStore();
   const [tab, setTab] = useState<MailTab>('inbox');
   const [activeLetter, setActiveLetter] = useState<MailLetter | null>(null);
   const [recipientId, setRecipientId] = useState(Object.keys(characters)[0] || '');
@@ -65,10 +66,11 @@ export default function MailboxApp() {
   const [content, setContent] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | undefined>();
   const [sending, setSending] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const inboxLetters = useMemo(() => mailboxLetters.filter(letter => letter.direction === 'incoming'), [mailboxLetters]);
   const sentLetters = useMemo(() => mailboxLetters.filter(letter => letter.direction === 'outgoing'), [mailboxLetters]);
-  const mailboxCharacters = useMemo(() => Object.values(characters), [characters]);
+  const mailboxCharacters = useMemo(() => Object.values(characters).filter(c => (c as any).isDisabled !== true), [characters]);
 
   const openLetter = (letter: MailLetter) => {
     setActiveLetter(letter);
@@ -93,11 +95,26 @@ export default function MailboxApp() {
       isRead: true,
     };
     saveMailboxLetter(outgoingLetter);
+    // 发出的信记入记忆库
+    saveLetterToMemory(recipientId, `我给${characters[recipientId]?.name || 'ta'}写了一封信：${outgoingLetter.content}`, 'outgoing');
 
     try {
       const char = characters[recipientId];
       if (char) {
-        const reply = (await generateAIResponse(`你是${char.name}，性格是${char.personality}，和我的关系是${char.relationship}。我给你写了一封信。\n信件标题：${outgoingLetter.subject}\n信件内容：${outgoingLetter.content}\n请你回一封真实、温柔、有个人风格的短信纸来信，像真正手写信，不要Markdown，不超过180字。`)).trim();
+        // 获取记忆作为回信参考
+        const memories = characterMemoryBank[recipientId] || [];
+        const recentMemories = memories
+          .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
+          .slice(0, 10)
+          .map(m => m.summary)
+          .join('\n');
+
+        const reply = (await generateAIResponse(
+          `你是${char.name}，性格是${char.personality}，和我的关系是${char.relationship}。我给你写了一封信。\n信件标题：${outgoingLetter.subject}\n信件内容：${outgoingLetter.content}\n` +
+          (recentMemories ? `\n以下是你对我的记忆（请据此回信）：\n${recentMemories}\n\n` : '') +
+          `请你回一封真实、温柔、有个人风格的短信纸来信，像真正手写信，不要Markdown，不超过180字。`
+        )).trim();
+        saveInteractionMemory(recipientId, `${char.name}给我回了一封信：${outgoingLetter.subject}`, reply);
         saveMailboxLetter({
           id: `${Date.now()}_reply_${recipientId}`,
           direction: 'incoming',
@@ -108,6 +125,8 @@ export default function MailboxApp() {
           createdAt: Date.now() + 1,
           isRead: false,
         });
+        // 回信也记入记忆库
+        saveLetterToMemory(recipientId, `${char.name}给我回了一封信：${reply}`, 'incoming');
         setNotification({
           id: Date.now() + 2,
           title: char.name,
@@ -143,10 +162,59 @@ export default function MailboxApp() {
     setPhotoUrl(undefined);
   };
 
+  /** 根据记忆库自动生成信件内容 */
+  const generateLetterFromMemories = async () => {
+    if (!recipientId) return;
+    setGenerating(true);
+    try {
+      const char = characters[recipientId];
+      const memories = characterMemoryBank[recipientId] || [];
+      const recentMemories = memories
+        .sort((a, b) => b.lastAccessedAt - a.lastAccessedAt)
+        .slice(0, 10)
+        .map(m => m.summary)
+        .join('\n');
+
+      const result = await generateAIResponse(
+        `你是「我」，以第一人称给${char?.name || 'ta'}写一封温柔真诚的信。\n` +
+        (recentMemories ? `以下是我（用户）对${char?.name || 'ta'}的记忆：\n${recentMemories}\n\n` : '') +
+        `请根据这些记忆写一封信给${char?.name || 'ta'}，语气温暖自然，像真实手写信，不要Markdown，200字以内。`
+      );
+      setContent(result.trim());
+    } catch {
+      // 生成失败时不改动已有内容
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  /** 保存信件内容到角色记忆库 */
+  const saveLetterToMemory = (charId: string, text: string, direction: 'outgoing' | 'incoming') => {
+    addCharacterMemory(charId, {
+      type: 'event',
+      content: text,
+      summary: text.slice(0, 80),
+      tags: ['letter', 'mail'],
+      valence: direction === 'outgoing' ? 0.6 : 0.5,
+      arousal: 0.4,
+      importance: 6,
+    });
+    useAppStore.getState().addEmotionEvent({
+      characterId: charId,
+      paDelta: direction === 'outgoing' ? 0.2 : 0.15,
+      naDelta: -0.05,
+      word: '温暖',
+      valence: 0.5,
+      arousal: 0.3,
+      matchSource: 'free_form',
+      source: 'manual',
+    });
+  };
+
   if (tab === 'compose') {
     return (
       <div className="h-full flex flex-col bg-[#f7efe5]">
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
           <button onClick={() => { resetCompose(); setTab('inbox'); }} className="text-[#7d6142]"><ChevronLeft size={28} /></button>
           <div className="font-bold text-[#67472f]" style={{ fontFamily: HEADER_FONT }}>写信</div>
           <button onClick={handleSend} disabled={sending || !content.trim()} className="text-sm font-bold text-[#7b5434] disabled:opacity-40">
@@ -161,7 +229,7 @@ export default function MailboxApp() {
               className="w-full rounded-2xl border border-[#e7d9c6] bg-white px-4 py-3 text-[#6a4d33]"
               style={{ fontFamily: HEADER_FONT }}
             >
-              {Object.values(characters).map(char => (
+              {mailboxCharacters.map(char => (
                 <option key={char.id} value={char.id}>{char.name}</option>
               ))}
             </select>
@@ -179,6 +247,14 @@ export default function MailboxApp() {
               className="w-full min-h-[260px] resize-none rounded-[1.8rem] border border-[#e7d9c6] bg-[#fffdf8] px-5 py-5 text-[#513d2c] outline-none leading-9"
               style={{ fontFamily: HANDWRITING_FONT, fontSize: 20 }}
             />
+            <button
+              onClick={generateLetterFromMemories}
+              disabled={generating || !recipientId}
+              className="w-full rounded-2xl border border-[#e7d9c6] bg-[#fffaf3] px-4 py-3 text-sm font-bold text-[#6a4d33] flex items-center justify-center gap-2 disabled:opacity-40"
+            >
+              {generating ? <RefreshCw size={16} className="animate-spin" /> : null}
+              {generating ? '正在根据记忆写信...' : '📝 根据记忆写信'}
+            </button>
           </div>
           <div className="flex items-center gap-3">
             <ImageUploader onImageSelected={(url) => setPhotoUrl(url)}>
@@ -206,7 +282,7 @@ export default function MailboxApp() {
       : (characters[activeLetter.toId]?.name || activeLetter.toId);
     return (
       <div className="h-full flex flex-col bg-[#f7efe5]">
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
           <button onClick={() => setTab(activeLetter.direction === 'incoming' ? 'inbox' : 'sent')} className="text-[#7d6142]"><ChevronLeft size={28} /></button>
           <div className="font-bold text-[#67472f]" style={{ fontFamily: HEADER_FONT }}>信件内容</div>
           <button onClick={() => { if (confirm('确定删除这封信吗？')) { deleteMailboxLetter(activeLetter.id); setTab(activeLetter.direction === 'incoming' ? 'inbox' : 'sent'); } }} className="text-[#a94f4f]">
@@ -223,7 +299,7 @@ export default function MailboxApp() {
   if (tab === 'manage') {
     return (
       <div className="h-full flex flex-col bg-[#f7efe5]">
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
           <button onClick={() => setTab('inbox')} className="text-[#7d6142]"><ChevronLeft size={28} /></button>
           <div className="font-bold text-[#67472f]" style={{ fontFamily: HEADER_FONT }}>来信设置</div>
           <div className="w-5" />
@@ -288,7 +364,7 @@ export default function MailboxApp() {
 
   return (
     <div className="h-full flex flex-col bg-[#f7efe5]">
-      <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
+      <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b border-[#eadcc9] bg-[#fff8ef]">
         <button onClick={closeApp} className="text-[#7d6142]"><ChevronLeft size={28} /></button>
         <div className="font-bold text-[#67472f]" style={{ fontFamily: HEADER_FONT }}>信箱</div>
         <div className="flex items-center gap-3 text-[#7b5434]">

@@ -1,6 +1,30 @@
 @import "tailwindcss";
 
+@theme {
+  --color-alabaster: #F9F8F6;
+  --color-charcoal: #1A1A1A;
+  --color-taupe: #EBE5DE;
+  --color-warm-grey: #6C6863;
+  --color-gold: #D4AF37;
+  --color-mahogany: #1C1714;
+  --color-oak: #251E19;
+  --color-parchment: #E8DFD4;
+  --color-sepia: #3D332B;
+  --color-muted-gold: #9C8B7A;
+  --color-brass: #C9A962;
+  --color-crimson: #8B2635;
+  --color-dark-border: #4A3F35;
+  --font-heading: 'Cormorant Garamond', serif;
+  --font-body: 'Crimson Pro', serif;
+  --font-display: 'Cinzel', serif;
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
+
+html, body, #root {
+  background: #0f172a;
+  min-height: calc(100dvh + 1px);
+}
 
 @layer utilities {
   .animate-slide-down {
@@ -11,6 +35,32 @@
   }
   .mb-safe {
     margin-bottom: env(safe-area-inset-bottom, 20px);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.2s ease-out;
+  }
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  .ornate-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+  }
+  .ornate-divider::before,
+  .ornate-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #4A3F35, transparent);
   }
   .preserve-3d {
     transform-style: preserve-3d;
@@ -28,6 +78,10 @@
     mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 20%, black 80%, transparent);
   }
+  .glass-frost {
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(12px) saturate(130%);
+  }
 }
 
 @layer base {
@@ -35,6 +89,266 @@
   textarea::placeholder {
     opacity: 0.58;
   }
+}
+
+/* ── Music Player Widget ── */
+.card {
+  position: relative;
+  width: 100%;
+  max-width: 340px;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 28px;
+  padding: 28px 24px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.9);
+  transition: all 0.3s ease;
+}
+.card .info {
+  position: relative;
+  z-index: 1;
+}
+.card .mask {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  margin: 0 auto 24px;
+  cursor: pointer;
+  border-radius: 50%;
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.card .mask.is-zoomed {
+  transform: scale(0.65);
+}
+.card .spin {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+}
+.card .cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+.card .cover-enter {
+  animation: cover-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.card .cover-exit {
+  animation: cover-out 0.3s ease-in forwards;
+}
+.card .hole {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.card .hole-inner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Scales visualization */
+.scales {
+  width: 100%;
+  height: 48px;
+  margin-bottom: 16px;
+  color: rgba(255, 255, 255, 0.5);
+}
+.scales circle {
+  fill: currentColor;
+  opacity: 0.5;
+}
+.is-playing .scales circle {
+  opacity: 0.7;
+}
+
+/* Track info */
+.track-info {
+  position: relative;
+  text-align: center;
+  min-height: 60px;
+  margin-bottom: 12px;
+}
+.ti-layer {
+  text-align: center;
+  width: 100%;
+}
+.ti-layer p.artist {
+  font-size: 12px;
+  opacity: 0.55;
+  margin: 0 0 3px;
+  letter-spacing: 0.3px;
+}
+.ti-layer h2.track {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.3;
+}
+.ti-abs {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+}
+.ti-enter {
+  animation: ti-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.ti-exit {
+  animation: ti-out 0.25s ease-in forwards;
+}
+
+/* Progress bar */
+.card .bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  cursor: pointer;
+  margin-bottom: 6px;
+  overflow: hidden;
+  transition: height 0.15s;
+}
+.card .bar:hover {
+  height: 6px;
+}
+.card .bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.95));
+  border-radius: 2px;
+  transition: width 0.1s linear;
+  will-change: width;
+}
+.card .time {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11px;
+  opacity: 0.45;
+  margin-bottom: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Controls */
+.card .controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.card .ctrl {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+.card .ctrl:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.95);
+}
+.card .ctrl:active {
+  transform: scale(0.93);
+}
+.card .ctrl-play {
+  width: 52px;
+  height: 52px;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.card .ctrl-play:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+.card .ctrl-toggle.is-active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+}
+.card .ctrl-loop .loop-one {
+  position: absolute;
+  bottom: 2px;
+  right: 5px;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.card .ctrl-loop.mode-one .loop-one {
+  opacity: 1;
+}
+
+/* ── Cinematic Liquid-Glass (Movie App) ── */
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.02);
+  background-blend-mode: luminosity;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: none;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, 0.35) 0%,
+    rgba(255, 255, 255, 0.12) 20%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.12) 80%,
+    rgba(255, 255, 255, 0.35) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.liquid-glass-strong {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  box-shadow: 4px 4px 4px rgba(0,0,0,0.05), inset 0 1px 1px rgba(255,255,255,0.12);
+}
+.liquid-glass-strong::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(180deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.2) 20%,
+    rgba(255, 255, 255, 0) 40%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.2) 80%,
+    rgba(255, 255, 255, 0.5) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 @keyframes slideDown {
@@ -46,4 +360,45 @@
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cover-in {
+  from { opacity: 0; transform: scale(1.08); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes cover-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.9); }
+}
+@keyframes ti-in {
+  from { opacity: 0; transform: translateX(var(--dx)); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes ti-out {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(var(--dx)); }
+}
+
+/* ── Character Phone Check ── */
+@keyframes finger-tap {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4px); }
+}
+.animate-finger-tap {
+  animation: finger-tap 0.6s ease-in-out infinite;
 }

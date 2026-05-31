@@ -11,6 +11,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 
+// 当被 Vite dev server 作为中间件导入时（非直接运行），跳过静态文件和服务启动
+const isMain = process.argv[1] && (
+  process.argv[1].includes('server.js') ||
+  process.argv[1].includes('/server')
+);
+
 // ── NetEase Weapi 加密 ──
 
 const IV = '0102030405060708';
@@ -72,7 +78,44 @@ const ENDPOINTS = {
     url: 'https://music.163.com/weapi/song/lyric',
     buildBody: (params) => ({ id: parseInt(params.id), lv: -1, kv: -1, tv: -1, os: 'ios' }),
   },
+  'search': {
+    url: 'https://music.163.com/weapi/search/get',
+    buildBody: (params) => ({ s: params.s || '', type: parseInt(params.type) || 1, limit: parseInt(params.limit) || 10, offset: parseInt(params.offset) || 0 }),
+  },
 };
+
+// ── 路由: 网易云短链接解析 ──
+
+app.get('/api/resolve', async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ code: -1, msg: 'Missing url' });
+
+  try {
+    const resp = await fetch(url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const finalUrl = resp.url;
+    if (finalUrl.includes('music.163.com')) {
+      const urlObj = new URL(finalUrl);
+      // 检查是否是歌曲
+      const songMatch = finalUrl.match(/\/song\/(\d+)/) || finalUrl.match(/[?&]id=(\d+)/);
+      if (songMatch) return res.json({ type: 'song', id: songMatch[1], url: finalUrl });
+      // 检查是否是歌单
+      const playlistMatch = finalUrl.match(/\/playlist\/(\d+)/) || finalUrl.match(/[?&]id=(\d+)/);
+      if (playlistMatch) return res.json({ type: 'playlist', id: playlistMatch[1], url: finalUrl });
+    }
+    if (finalUrl.includes('bilibili.com')) {
+      const bvMatch = finalUrl.match(/BV\w+/);
+      if (bvMatch) return res.json({ type: 'bilibili', id: bvMatch[0], url: finalUrl });
+    }
+    // 从hash里提取
+    const hash = finalUrl.split('#')[1] || '';
+    const idInHash = hash.match(/\/(\d+)/);
+    if (idInHash) return res.json({ type: hash.includes('playlist') ? 'playlist' : 'song', id: idInHash[1], url: finalUrl });
+
+    res.json({ type: 'unknown', id: null, url: finalUrl });
+  } catch (err) {
+    res.status(500).json({ code: -1, msg: err.message });
+  }
+});
 
 // ── 路由: 网易云 API 代理 ──
 
@@ -109,6 +152,111 @@ app.get('/api', async (req, res) => {
   }
 });
 
+// ── 路由: 音频代理（解决网易云防盗链）──
+
+app.get('/api/play', async (req, res) => {
+  const id = req.query.id;
+  if (!id) return res.status(400).json({ code: -1, msg: 'Missing id' });
+
+  try {
+    // 先获取真实播放地址
+    const params = { ids: JSON.stringify([parseInt(id)]), level: 'standard', encodeType: 'aac', csrf_token: '' };
+    const encrypted = weapiEncrypt(params);
+    const formBody = new URLSearchParams({ params: encrypted.params, encSecKey: encrypted.encSecKey });
+
+    const apiRes = await fetch('https://music.163.com/weapi/song/enhance/player/url/v1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': 'https://music.163.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      body: formBody.toString(),
+    });
+
+    const data = await apiRes.json();
+    const songUrl = data.data?.[0]?.url;
+    if (!songUrl) return res.status(404).json({ code: -1, msg: 'Song URL not available' });
+
+    // 代理音频流（绕过防盗链）
+    const audioRes = await fetch(songUrl, {
+      headers: {
+        'Referer': 'https://music.163.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
+    if (!audioRes.ok) return res.status(502).json({ code: -1, msg: 'Audio fetch failed' });
+
+    // 转发音频流（流式转发，兼容 Web ReadableStream）
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', audioRes.headers.get('content-type') || 'audio/mpeg');
+    if (audioRes.headers.get('content-length')) {
+      res.setHeader('Content-Length', audioRes.headers.get('content-length'));
+    }
+    for await (const chunk of audioRes.body) {
+      res.write(chunk);
+    }
+    res.end();
+  } catch (err) {
+    res.status(500).json({ code: -1, msg: err.message });
+  }
+});
+
+// ── 路由: 封面图片代理（解决网易云防盗链）──
+
+app.get('/api/cover', async (req, res) => {
+  const imgUrl = req.query.url;
+  if (!imgUrl) return res.status(400).json({ code: -1, msg: 'Missing url' });
+
+  try {
+    const imgRes = await fetch(imgUrl, {
+      headers: {
+        'Referer': 'https://music.163.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    });
+
+    if (!imgRes.ok) return res.status(502).json({ code: -1, msg: 'Image fetch failed' });
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
+    res.end(imgBuffer);
+  } catch (err) {
+    res.status(500).json({ code: -1, msg: err.message });
+  }
+});
+
+// ── 路由: 搜索歌曲 ──
+
+app.get('/api/search', async (req, res) => {
+  const keywords = req.query.keywords;
+  if (!keywords) return res.status(400).json({ code: -1, msg: 'Missing keywords' });
+
+  try {
+    const encrypted = weapiEncrypt({ s: keywords, type: 1, limit: parseInt(req.query.limit) || 10, offset: 0 });
+    const formBody = new URLSearchParams({ params: encrypted.params, encSecKey: encrypted.encSecKey });
+
+    const apiRes = await fetch('https://music.163.com/weapi/search/get', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': 'https://music.163.com/',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      body: formBody.toString(),
+    });
+
+    const data = await apiRes.json();
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ code: -1, msg: err.message });
+  }
+});
+
 // ── 路由: Gemini API 代理 ──
 // 前端 AI 请求走这里，API Key 留在服务端不暴露给客户端
 
@@ -140,19 +288,39 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// ── 静态文件 ──
-// 前端构建产物在 dist/ 目录
+// ── 静态文件（仅生产模式，Vite dev 模式下由 Vite 自己处理） ──
 
-app.use(express.static(path.join(__dirname, 'dist')));
+if (isMain) {
+  // 带 hash 的静态资源（在 assets/ 里）—— 长期缓存
+  app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets'), {
+    maxAge: '30d',
+    immutable: true,
+  }));
+  // 塔罗牌图片 —— 长期缓存
+  app.use('/tarot-cards', express.static(path.join(__dirname, 'dist', 'tarot-cards'), {
+    maxAge: '30d',
+    immutable: true,
+  }));
+  // 其他静态文件（图标、音频等）—— 短期缓存
+  app.use(express.static(path.join(__dirname, 'dist'), {
+    maxAge: '1d',
+  }));
+  // 所有非 API 路由返回 index.html（SPA fallback）
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  });
+}
 
-// 所有非 API 路由返回 index.html（SPA fallback）
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
+// 当被 Vite 作为中间件使用时，未匹配的路由继续传递
+app.use((_req, _res, next) => next());
 
-// ── 启动 ──
+// ── 启动（仅直接运行时） ──
 
-const PORT = parseInt(process.env.PORT || '3000');
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on http://0.0.0.0:${PORT}`);
-});
+if (isMain) {
+  const PORT = parseInt(process.env.PORT || '3000');
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+}
+
+export default app;

@@ -1,8 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../../store';
 import { ChevronLeft, RefreshCcw, Trash2, MessageSquare } from 'lucide-react';
 import { generateAIResponse, getCharacterReply } from '../../lib/ai';
 import { WritingArticle } from '../../types';
+import { saveInteractionMemory } from '../../lib/characterMemory';
 
 const STYLE_OPTIONS = ['暧昧拉扯', '锋利冷感', '温柔治愈', '轻喜剧', '偏现实口语', '小说感浓一点', '压抑克制', '青春感', '悬疑感', '群像关系流'];
 const BG_OPTIONS = ['现代都市', '校园', '同居日常', '久别重逢', '雨夜街头', '聚会后深夜', '任务搭档', '办公室', '旅行途中', '医院/照护', '末世生存', '豪门拉扯'];
@@ -194,7 +195,7 @@ const parseUnderlineFeedbacks = (article: WritingArticle | null, characters: Rec
 };
 
 export default function WritingApp() {
-  const { closeApp, characters, saveWritingArticle, deleteWritingArticle, writingArticles, addActivityLog } = useAppStore();
+  const { closeApp, characters, saveWritingArticle, deleteWritingArticle, writingArticles, addActivityLog, takeoverWritingArticleId, setTakeoverWritingArticleId } = useAppStore();
   const [view, setView] = useState<'editor' | 'history' | 'article'>('editor');
   const [characterIds, setCharacterIds] = useState<(string | 'user')[]>(['user']);
   const [relation, setRelation] = useState('朋友');
@@ -212,12 +213,26 @@ export default function WritingApp() {
   const [loading, setLoading] = useState(false);
   const [selectedUnderlineId, setSelectedUnderlineId] = useState<string | null>(null);
   const [underlineBubble, setUnderlineBubble] = useState<UnderlineBubbleState | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const articleCardRef = useRef<HTMLDivElement | null>(null);
 
   const availableCharacters = useMemo(() => Object.values(characters).filter(char => (char as any).isDisabled !== true), [characters]);
   const characterChips = useMemo(() => [{ id: 'user', name: 'user本人' }, ...availableCharacters.map(char => ({ id: char.id, name: char.name }))], [availableCharacters]);
   const underlineEntries = useMemo(() => parseUnderlineFeedbacks(currentArticle, characters), [currentArticle, characters]);
   const selectedUnderline = useMemo(() => underlineEntries.find(entry => entry.id === selectedUnderlineId) || null, [underlineEntries, selectedUnderlineId]);
+
+  // ── Takeover visual navigation ──
+  useEffect(() => {
+    if (takeoverWritingArticleId) {
+      const article = writingArticles.find(a => a.id === takeoverWritingArticleId);
+      if (article) {
+        setCurrentArticle(article);
+        setView('article');
+      }
+    } else if (view === 'article' && currentArticle) {
+      // takeover ended or cleared — stay on article view but user can navigate back
+    }
+  }, [takeoverWritingArticleId]);
 
   const toggleCharacter = (id: string | 'user') => {
     setCharacterIds(prev => {
@@ -231,6 +246,7 @@ export default function WritingApp() {
 
   const generateArticle = async (extraInstruction = '') => {
     setLoading(true);
+    setError(null);
     const finalBackground = customBackground.trim() || background;
     const finalStyle = customStyle.trim() || style;
     const finalTheme = customTheme.trim() || theme;
@@ -251,6 +267,7 @@ export default function WritingApp() {
 3. 正文自然，不要Markdown，不要标题装饰符，不要分点
 4. 输出完整正文`;
       const content = (await generateAIResponse(prompt)).replace(/[#*]/g, '').trim();
+      if (!content) throw new Error('AI 返回了空内容，请检查 API 配置');
       const article: WritingArticle = {
         id: currentArticle?.id || `${Date.now()}`,
         title: `${finalTheme} · ${selectedNames.join(' / ')}`,
@@ -280,6 +297,15 @@ export default function WritingApp() {
         timestamp: Date.now(),
         relatedCharacterIds: characterIds.filter(id => id !== 'user') as string[]
       });
+      // 写作记忆+情绪
+      const realCharIds = characterIds.filter(id => id !== 'user') as string[];
+      realCharIds.forEach(charId => {
+        saveInteractionMemory(charId, `一起创作了故事《${article.title}》`, `风格:${finalStyle}，主题:${finalTheme}`, 'event', 4);
+        const store = useAppStore.getState();
+        store.addEmotionEvent({ characterId: charId, paDelta: 0.2, naDelta: -0.05, word: '创作', valence: 0.5, arousal: 0.5, matchSource: 'free_form', source: 'manual' });
+      });
+    } catch (e: any) {
+      setError(e.message || '生成失败，请检查 API 配置');
     } finally {
       setLoading(false);
     }
@@ -364,7 +390,7 @@ ${targets.map((item, index) => `${index + 1}. ${item.quote}`).join('\n')}`;
   if (view === 'history') {
     return (
       <div className="h-full flex flex-col bg-[#faf7f2] text-slate-800">
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b">
           <button onClick={() => setView('editor')}><ChevronLeft size={28} /></button>
           <div className="font-black">写作记录</div>
           <div className="w-7" />
@@ -462,7 +488,7 @@ ${targets.map((item, index) => `${index + 1}. ${item.quote}`).join('\n')}`;
 
     return (
       <div className="h-full flex flex-col bg-[#faf7f2] text-slate-800">
-        <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b">
+        <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b">
           <button onClick={() => setView('history')}><ChevronLeft size={28} /></button>
           <div className="font-black">文章</div>
           <button onClick={() => setView('editor')} className="text-sm font-bold text-slate-500">设定</button>
@@ -531,7 +557,7 @@ ${targets.map((item, index) => `${index + 1}. ${item.quote}`).join('\n')}`;
 
   return (
     <div className="h-full flex flex-col bg-[#faf7f2] text-slate-800">
-      <div className="px-4 pt-12 pb-4 flex items-center justify-between border-b">
+      <div className="px-4 pt-7 pb-4 flex items-center justify-between border-b">
         <button onClick={closeApp}><ChevronLeft size={28} /></button>
         <div className="font-black">写作</div>
         <button onClick={() => setView('history')} className="text-sm font-bold text-slate-500">记录</button>
@@ -567,7 +593,12 @@ ${targets.map((item, index) => `${index + 1}. ${item.quote}`).join('\n')}`;
             </select>
             <input value={customTheme} onChange={e => setCustomTheme(e.target.value)} placeholder="自定义剧情主题" className="p-3 rounded-2xl border border-stone-200" />
           </div>
-          <input type="number" value={wordCount} onChange={e => setWordCount(parseInt(e.target.value) || 1500)} placeholder="字数" className="w-full p-3 rounded-2xl border border-stone-200" />
+          <input type="text" inputMode="numeric" value={wordCount || ''} onChange={e => {
+            const raw = e.target.value;
+            if (raw === '') { setWordCount(0); return; }
+            if (/^\d{1,5}$/.test(raw)) setWordCount(parseInt(raw));
+          }} placeholder="字数" className="w-full p-3 rounded-2xl border border-stone-200" />
+          {error && <div className="rounded-2xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-600">{error}</div>}
           <button onClick={() => generateArticle()} disabled={loading} className="w-full p-3 rounded-2xl bg-slate-900 text-white font-bold disabled:opacity-50">
             {currentArticle ? '重新生成文章' : '生成文章'}
           </button>

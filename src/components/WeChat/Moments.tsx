@@ -48,7 +48,7 @@ function ConfirmModal({ isOpen, onClose, onConfirm, title, message, confirmText 
   );
 }
 
-export default function Moments() {
+export default function Moments({ characterId }: { characterId?: string }) {
   const { moments, characters, settings, updateSettings, closeApp, addMoment, toggleMomentLike, addMomentComment, deleteMoment, deleteMomentComment } = useAppStore();
   const [showPost, setShowPost] = useState(false);
   const [commentingMomentId, setCommentingMomentId] = useState<string | null>(null);
@@ -57,8 +57,10 @@ export default function Moments() {
   const [isReplying, setIsReplying] = useState(false);
   const [showOptions, setShowOptions] = useState<string | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ type: 'moment' | 'comment'; momentId?: string; index?: number } | null>(null);
-  
+
   const isDark = settings.wechatTheme === 'dark';
+  // In phone check mode: use character's info instead of user's
+  const viewerChar = characterId ? characters[characterId] : null;
 
   const handleAddComment = async (momentId: string) => {
     if (!commentText.trim()) return;
@@ -128,7 +130,7 @@ export default function Moments() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-gray-100 dark:bg-black">
+    <div className="h-full flex flex-col bg-gray-100 dark:bg-black min-h-0">
       <ConfirmModal
         isOpen={!!deleteModal}
         onClose={() => setDeleteModal(null)}
@@ -139,31 +141,53 @@ export default function Moments() {
         isDark={isDark}
       />
       
-      <div className="bg-gray-100 dark:bg-[#191919] px-4 pt-14 pb-3 flex items-center justify-between z-10 border-b dark:border-white/5">
-        <div className="w-8"></div>
-        <h1 className="text-lg font-medium dark:text-gray-100">朋友圈</h1>
-        <button className="w-8 flex justify-end text-slate-800 dark:text-gray-100" onClick={() => setShowPost(true)}><Camera size={24} /></button>
-      </div>
+      {/* In phone check mode, skip the "朋友圈" header (parent shows "发现") */}
+      {!viewerChar && (
+        <div className="bg-gray-100 dark:bg-[#191919] px-4 pt-9 pb-2 flex items-center justify-between z-10 border-b dark:border-white/5">
+          <div className="w-8"></div>
+          <h1 className="text-lg font-medium dark:text-gray-100">朋友圈</h1>
+          <button className="w-8 flex justify-end text-slate-800 dark:text-gray-100" onClick={() => setShowPost(true)}><Camera size={24} /></button>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto pb-14">
-        <ImageUploader 
-          onImageSelected={(url) => updateSettings({ wechatMomentsBg: url })}
-          className="h-60 bg-gradient-to-b from-blue-500 to-blue-700 dark:from-blue-800 dark:to-blue-950 relative mb-14 cursor-pointer bg-cover bg-center"
+        <div
+          className={`${viewerChar ? 'h-32' : 'h-60'} bg-gradient-to-b from-blue-500 to-blue-700 dark:from-blue-800 dark:to-blue-950 relative mb-14 bg-cover bg-center`}
+          style={viewerChar?.background ? { backgroundImage: `url(${viewerChar.background})` } : undefined}
         >
-          {settings.wechatMomentsBg && (
-             <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${settings.wechatMomentsBg})` }} />
+          {!viewerChar ? (
+            <ImageUploader
+              onImageSelected={(url) => updateSettings({ wechatMomentsBg: url })}
+              className="absolute inset-0 cursor-pointer"
+            >
+              {settings.wechatMomentsBg && (
+                <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${settings.wechatMomentsBg})` }} />
+              )}
+            </ImageUploader>
+          ) : viewerChar.momentsBackground && (
+            <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${viewerChar.momentsBackground})` }} />
           )}
           <div className="absolute -bottom-10 right-4 flex items-end z-10">
-            <span className="text-white font-bold text-xl mr-3 mb-1 drop-shadow-lg">{settings.wechatName}</span>
-            <div 
+            <span className="text-white font-bold text-xl mr-3 mb-1 drop-shadow-lg">{viewerChar?.name || settings.wechatName}</span>
+            <div
               className="w-16 h-16 rounded-lg border-2 border-white dark:border-black bg-white dark:bg-black shadow-lg"
-              style={{ background: settings.wechatAvatar.startsWith('#') ? settings.wechatAvatar : `url(${settings.wechatAvatar}) center/cover` }}
+              style={{ background: viewerChar ? (viewerChar.avatar?.startsWith('#') ? viewerChar.avatar : `url(${viewerChar.avatar}) center/cover`) : (settings.wechatAvatar.startsWith('#') ? settings.wechatAvatar : `url(${settings.wechatAvatar}) center/cover`) }}
             />
           </div>
-        </ImageUploader>
+        </div>
 
         <div className="px-4 space-y-4">
-          {moments.map(moment => {
+          {moments
+            // NPC/phone-check moments don't belong in main feed; keep real character moments
+            .filter(m => {
+              if (m.authorId === 'user') return true;
+              if (m.authorId.startsWith('npc_')) return false;
+              if (m.authorId.startsWith('pc_')) return false;
+              const author = characters[m.authorId];
+              if (!author) return false;
+              return author.momentsEnabled !== false && !author.isDisabled;
+            })
+            .map(moment => {
             const isUser = moment.authorId === 'user';
             const author = isUser ? { name: settings.wechatName, avatar: settings.wechatAvatar, momentsBackground: settings.wechatMomentsBg } : characters[moment.authorId];
             if (!author) return null;
@@ -389,9 +413,9 @@ function PostMoment({ onBack }: { onBack: () => void }) {
         };
         img.src = reader.result as string;
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(file as Blob);
     });
-    
+
     e.target.value = '';
   };
 
@@ -482,6 +506,7 @@ function PostMoment({ onBack }: { onBack: () => void }) {
       imageUrl: images[0] || '',
       musicUrl,
       location,
+      timestamp: Date.now(),
     };
     
     addMoment(newMoment);
@@ -496,7 +521,6 @@ function PostMoment({ onBack }: { onBack: () => void }) {
           // Save to character's memory
           if (content) {
             addCharacterMemory(charId, {
-              characterId: charId,
               type: 'event',
               content: `${settings.wechatName} 发了一条朋友圈：${content}`,
               summary: `${settings.wechatName} 发了朋友圈：${content.slice(0, 30)}`,

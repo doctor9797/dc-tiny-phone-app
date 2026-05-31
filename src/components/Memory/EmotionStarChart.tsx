@@ -1,13 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { CharacterMemoryEntry } from '../../types';
 import { scoreMemory } from '../../lib/characterMemory';
 
 interface Props {
   memories: CharacterMemoryEntry[];
-  showDecoration: boolean;
-  showForgotten: boolean;
-  onToggleDecoration: () => void;
-  onToggleForgotten: () => void;
 }
 
 const FORGOTTEN_THRESHOLD = 0.05;
@@ -24,10 +20,9 @@ const LAYER_COLORS: Record<string, string> = {
 };
 
 export default function EmotionStarChart({
-  memories, showDecoration, showForgotten, onToggleDecoration, onToggleForgotten,
+  memories,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [selectedDot, setSelectedDot] = useState<CharacterMemoryEntry | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -108,10 +103,6 @@ export default function EmotionStarChart({
       const isForgotten = score < FORGOTTEN_THRESHOLD;
       const isDecoration = m.category === 'decoration_mood';
 
-      // Filter toggles
-      if (isDecoration && !showDecoration) continue;
-      if (isForgotten && !showForgotten) continue;
-
       // Convert in-memory valence 0~1 to -1~+1
       const v = (m.valence - 0.5) * 2;
       const a = m.arousal;
@@ -141,7 +132,7 @@ export default function EmotionStarChart({
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-  }, [memories, showDecoration, showForgotten]);
+  }, [memories]);
 
   return (
     <div className="space-y-2">
@@ -151,17 +142,7 @@ export default function EmotionStarChart({
         style={{ width: CANVAS_SIZE, height: CANVAS_SIZE }}
       />
 
-      {/* Legend & toggles */}
-      <div className="flex flex-wrap gap-2 justify-center text-xs">
-        <label className="flex items-center gap-1 text-gray-500">
-          <input type="checkbox" checked={showDecoration} onChange={onToggleDecoration} className="accent-purple-500" />
-          装饰心情
-        </label>
-        <label className="flex items-center gap-1 text-gray-500">
-          <input type="checkbox" checked={showForgotten} onChange={onToggleForgotten} className="accent-purple-500" />
-          已遗忘
-        </label>
-      </div>
+
 
       {/* Layer legend */}
       <div className="flex flex-wrap gap-2 justify-center text-[10px] text-gray-400">
@@ -173,11 +154,6 @@ export default function EmotionStarChart({
         ))}
       </div>
 
-      {selectedDot && (
-        <div className="bg-purple-50 dark:bg-purple-900/30 rounded-lg p-2 text-xs text-gray-600 dark:text-gray-300">
-          {selectedDot.summary} (V:{((selectedDot.valence - 0.5) * 2).toFixed(1)}, A:{selectedDot.arousal.toFixed(1)})
-        </div>
-      )}
     </div>
   );
 }
