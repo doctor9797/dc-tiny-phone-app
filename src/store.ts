@@ -694,7 +694,7 @@ export const useAppStore = create<AppState & AppActions>()(
       })),
 
       saveNewsIssue: (issue) => set((state) => {
-        const others = (state.newsIssues || []).filter(existing => existing.id !== issue.id && existing.date !== issue.date);
+        const others = (state.newsIssues || []).filter(existing => existing.id !== issue.id);
         return { newsIssues: [issue, ...others].sort((a, b) => b.createdAt - a.createdAt) };
       }),
 

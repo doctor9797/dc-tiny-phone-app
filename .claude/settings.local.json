@@ -64,7 +64,8 @@
       "Bash(unzip *)",
       "Bash(zip -r /Users/huangjinyi/Desktop/lav-phone-fc-v3.zip server.js package.json node_modules -x \"node_modules/.package-lock.json\")",
       "Bash(bash)",
-      "WebFetch(domain:zeabur.com)"
+      "WebFetch(domain:zeabur.com)",
+      "Bash(pip3 list *)"
     ]
   }
 }

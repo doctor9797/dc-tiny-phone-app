@@ -218,18 +218,28 @@ export default {
     const path = url.pathname;
 
     try {
-      if (path === '/api' || path === '/api/') return await handleWeAPI(url);
-      if (path === '/api/play') return await handleAudioProxy(url);
-      if (path === '/api/cover') return await handleImageProxy(url);
-      if (path === '/api/resolve') return await handleResolve(url);
-      if (path === '/api/chat') return await handleChat(request, env);
-      if (path === '/api/search') {
-        url.searchParams.set('endpoint', 'search');
-        return await handleWeAPI(url);
+      if (path.startsWith('/api/') || path === '/api') {
+        if (path === '/api' || path === '/api/') return await handleWeAPI(url);
+        if (path === '/api/play') return await handleAudioProxy(url);
+        if (path === '/api/cover') return await handleImageProxy(url);
+        if (path === '/api/resolve') return await handleResolve(url);
+        if (path === '/api/chat') return await handleChat(request, env);
+        if (path === '/api/search') {
+          url.searchParams.set('endpoint', 'search');
+          return await handleWeAPI(url);
+        }
+        return json({ code: -1, msg: 'Not found' }, 404);
       }
-      return json({ code: -1, msg: 'Not found' }, 404);
+
+      // 非 API 请求 → 从 Assets 返回静态文件
+      return await env.ASSETS.fetch(request);
     } catch (err) {
-      return json({ code: -1, msg: err.message }, 500);
+      // 如果 Assets 也 404，返回 SPA 入口（支持前端路由）
+      try {
+        return await env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request));
+      } catch {
+        return json({ code: -1, msg: err.message }, 500);
+      }
     }
   },
 };

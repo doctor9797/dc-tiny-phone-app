@@ -47,6 +47,23 @@ const HAND_SIZE = 5;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const randomItem = <T,>(items: T[]) => items[Math.floor(Math.random() * items.length)];
 
+// 骗子酒吧统一的 AI 格式约束（作为 systemInstruction 传入，比 prompt 中的指令更有效）
+const LIARS_BAR_SYSTEM: string = `你正在牌桌上和朋友们一起玩"骗子酒馆"。请严格遵守：
+1. 只说人物对话台词，不加任何括号、星号、引号、破折号等标注动作或神态的文字。
+2. 台词需要像正常说话一样：一句完整的话，可以带语气词、调侃、吐槽。
+3. 直接输出台词本身，不要加"他说""她说"等前缀。
+4. 不要有任何解释或备注。`;
+
+// 过滤动作描写：去掉括号/星号内的动作、神态、心理描述
+const stripAction = (text: string) =>
+  text
+    .replace(/[（(][^）)]*[）)]/g, '')   // 去掉中文括号 (动作)
+    .replace(/【[^】]*】/g, '')               // 去掉【动作】
+    .replace(/\*[^*]*\*/g, '')               // 去掉*动作*
+    .replace(/——.*$/, '')                     // 去掉破折号后的描写
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
 const getCardIcon = (rank: CardRank | string, size = 28) => {
   if (rank === '太阳') return <Sun className="text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.8)]" size={size} />;
   if (rank === '月亮') return <Moon className="text-blue-300 drop-shadow-[0_0_8px_rgba(147,197,253,0.8)]" size={size} />;
@@ -80,7 +97,11 @@ function FaceCard({ rank, selectable = false, selected = false, onClick, hidden 
 }
 
 export default function LiarsBarApp() {
-  const { closeApp, characters, addActivityLog } = useAppStore();
+  const { closeApp, characters, worldSettings, activeWorldSettingId, addActivityLog } = useAppStore();
+  const activeWorld = useMemo(() =>
+    worldSettings.find(w => w.id === activeWorldSettingId) || worldSettings[0],
+    [worldSettings, activeWorldSettingId]
+  );
   const [gamePhase, setGamePhase] = useState<GamePhase>('setup');
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
 
@@ -107,6 +128,9 @@ export default function LiarsBarApp() {
   // Memory
   const [gameMemory, setGameMemory] = useState<GameMemory | null>(null);
 
+  // Game-over impressions (moved from JSX to component level to fix hooks violation)
+  const [impressions, setImpressions] = useState<string[]>([]);
+
   // Helpers
   const alivePlayers = useMemo(() => players.filter(p => p.lives > 0), [players]);
   const userPlayer = useMemo(() => players.find(p => p.isUser) ?? null, [players]);
@@ -125,15 +149,53 @@ export default function LiarsBarApp() {
 
   const getCharData = (playerId: string) => {
     const base = characters[playerId];
+    // 从世界书的角色卡拿完整设定
+    const card = activeWorld?.characters.find(c => c.id === playerId);
     return {
-      name: base?.name || '未知',
-      personality: base?.personality || '普通',
-      relationship: base?.relationship || '',
+      id: playerId,
+      name: base?.name || card?.name || '未知',
+      personality: card?.personality || base?.personality || '普通',
+      relationship: base?.relationship || card?.relationship || '朋友',
+      biography: card?.biography || base?.biography || '',
+      experience: card?.experience || (base as any)?.experience || '',
+      viewOnMe: card?.viewOnMe || (base as any)?.viewOnMe || '',
+      interactionMode: card?.interactionMode || (base as any)?.interactionMode || '',
+      userNickname: card?.userNickname || base?.userNickname || '你',
+      affection: card?.affection ?? base?.affection ?? 50,
     };
   };
 
   const addChat = (playerId: string, name: string, text: string, isSystem = false) => {
     setChatLog(prev => [...prev, { id: `${Date.now()}_${Math.random()}`, playerId, name, text, isSystem }]);
+  };
+
+  // 根据好感度 + 关系 + 世界观角色卡，生成说话风格描述
+  const buildCharPersonaPrompt = (data: ReturnType<typeof getCharData>) => {
+    const { name, personality, relationship, biography, experience, viewOnMe, interactionMode, affection } = data;
+    const parts: string[] = [`你是${name}。`];
+    if (personality) parts.push(`性格：${personality}。`);
+    if (biography) parts.push(`背景：${biography}。`);
+    if (experience) parts.push(`经历：${experience}。`);
+
+    // 根据好感度 + 关系调整对你的态度
+    let tone = '';
+    if (affection >= 80) {
+      tone = '态度非常亲密友好';
+    } else if (affection >= 60) {
+      tone = '态度友善温和';
+    } else if (affection >= 40) {
+      tone = '态度平常，保持礼貌但有一定距离';
+    } else if (affection >= 20) {
+      tone = '态度冷淡，不太想多说话';
+    } else {
+      tone = '态度疏远甚至有些不耐烦';
+    }
+    if (viewOnMe) tone += `。你对我看法：${viewOnMe}`;
+    if (interactionMode) tone += `。说话习惯：${interactionMode}`;
+
+    parts.push(`你和我的关系是：${relationship}（你叫我${data.userNickname}，好感度${affection}/100）。`);
+    parts.push(`对我的态度：${tone}。`);
+    return parts.join('\n');
   };
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatLog]);
@@ -233,6 +295,27 @@ export default function LiarsBarApp() {
     startNewRound(playersState, playerId);
   };
 
+  // 让旁观角色对刚发生的局面吐槽一句
+  const onlookerBanter = async (playersState: Player[], exceptId: string) => {
+    const onlookers = playersState.filter(p => !p.isUser && p.lives > 0 && p.id !== exceptId);
+    if (onlookers.length === 0 || Math.random() > 0.45) return;
+    const speaker = randomItem(onlookers);
+    const data = getCharData(speaker.id);
+    const persona = buildCharPersonaPrompt(data);
+    try {
+      const raw = await generateAIResponse(
+        `你在牌桌上刚刚看了一出好戏——有人被抓到吹牛了。
+
+${persona}
+
+说一句看热闹的吐槽或调侃。`,
+        LIARS_BAR_SYSTEM
+      );
+      const text = stripAction(raw);
+      if (text) addChat(speaker.id, data.name, `${data.name}: ${text}`);
+    } catch {}
+  };
+
   const resolveChallenge = async (challengerId: string, play: PlayAction, playersState: Player[]) => {
     const actor = playersState.find(p => p.id === play.playerId)!;
     const challenger = playersState.find(p => p.id === challengerId)!;
@@ -240,7 +323,7 @@ export default function LiarsBarApp() {
 
     setLastPlayRevealed(true);
     addChat('system', '', `🔍 ${challenger.name} 质询了 ${actor.name}！翻开牌：${play.playedCards[0]}`, true);
-    await sleep(800);
+    await sleep(1200);
 
     if (isBluff) {
       // Caught bluffing
@@ -257,7 +340,9 @@ export default function LiarsBarApp() {
           loserInfo: [...prev.loserInfo, { playerId: actor.id, round: prev.roundLog.length + 1 }],
         } : prev);
         if (actor.id === 'user') { addChat('system', '', '你已被淘汰，可继续观战。', true); setSpectating(true); }
-        await sleep(500);
+        await sleep(1000);
+        await onlookerBanter(newPlayers, actor.id);
+        await sleep(800);
         await advanceAfterPlay(newPlayers, actor.id);
       } else {
         addChat('system', '', `❌ ${actor.name} 在说谎，失去一条命！`, true);
@@ -272,7 +357,9 @@ export default function LiarsBarApp() {
           addChat('system', '', '你已出局，可继续观战。', true);
           setSpectating(true);
         }
-        await sleep(500);
+        await sleep(800);
+        await onlookerBanter(newPlayers, actor.id);
+        await sleep(600);
         await advanceAfterPlay(newPlayers, play.playerId);
       }
     } else {
@@ -289,7 +376,9 @@ export default function LiarsBarApp() {
         addChat('system', '', '你已出局，可继续观战。', true);
         setSpectating(true);
       }
-      await sleep(500);
+      await sleep(800);
+      await onlookerBanter(newPlayers, challenger.id);
+      await sleep(600);
       await advanceAfterPlay(newPlayers, play.playerId);
     }
   };
@@ -375,7 +464,7 @@ export default function LiarsBarApp() {
     const speech = await generateAIPlaySpeech(player, suit);
     setIsAiThinking(false);
 
-    addChat(speech ? player.id : 'system', speech ? player.name : '', speech || `${player.name} 打出了一张牌。`, !speech);
+    addChat(speech ? player.id : 'system', speech ? player.name : '', speech ? `${player.name}: ${speech}` : `${player.name} 打出了一张牌。`, !speech);
     saveInteractionMemory(player.id, `和${player.name}一起玩骗子酒馆，${player.name}出了牌`);
     useAppStore.getState().addEmotionEvent({ characterId: player.id, paDelta: 0.05, naDelta: 0.03, word: '狡黠', valence: 0.1, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
 
@@ -403,7 +492,7 @@ export default function LiarsBarApp() {
     setLastPlay(playAction);
     setLastPlayRevealed(false);
 
-    await sleep(500);
+    await sleep(1200);
 
     await handleChallengePhase(playAction, newPlayers);
   };
@@ -412,53 +501,71 @@ export default function LiarsBarApp() {
 
   const generateAIPlaySpeech = async (player: Player, suit: CardRank) => {
     const data = getCharData(player.id);
+    const persona = buildCharPersonaPrompt(data);
     try {
-      return await generateAIResponse(
-        `你在玩骗子酒馆（Liar's Bar），轮到你出牌。当前花色是 ${suit}。
-你是 ${data.name}，性格：${data.personality}，关系：${data.relationship}。
-请说一句非常短的台词（不超过15字），表现你出牌时的态度——可以是虚张声势、淡定、挑衅等。
-必须贴合角色性格，不要解释，不要括号动作描写。`
+      const raw = await generateAIResponse(
+        `你在玩骗子酒馆（Liar's Bar），轮到你出牌了。当前要出的花色是 ${suit}。
+
+${persona}
+
+说一句话表达你出牌时的态度。可以虚张声势、淡定、挑逗、或在调侃对方。说一句正常人出牌时会说的话，不用太短。`,
+        LIARS_BAR_SYSTEM
       );
+      return stripAction(raw) || '';
     } catch { return ''; }
   };
 
   const generateChallengeSpeech = async (challengerId: string, targetId: string, suit: CardRank) => {
     const data = getCharData(challengerId);
+    const persona = buildCharPersonaPrompt(data);
     const target = players.find(p => p.id === targetId);
     try {
-      const text = await generateAIResponse(
-        `你在玩骗子酒馆。${target?.name || '某人'} 刚声称打出了 ${suit}，但你怀疑他在说谎。
-你是 ${data.name}，性格：${data.personality}。
-请说一句简短的台词（不超过15字）表达你要质询他，必须符合角色性格，不要解释。`
+      const raw = await generateAIResponse(
+        `你在玩骗子酒馆。${target?.name || '某人'} 刚声称打出了 ${suit}，但你觉得他在说谎。
+
+${persona}
+
+说一句话质疑他。`,
+        LIARS_BAR_SYSTEM
       );
-      return `${data.name}: ${text}`;
+      return `${data.name}: ${stripAction(raw)}`;
     } catch { return null; }
   };
 
   const generateAIChatter = async (speakerId: string, playersState: Player[]) => {
     const data = getCharData(speakerId);
+    const persona = buildCharPersonaPrompt(data);
     const summary = playersState.map(p => `${p.name}(${p.lives}命/${p.hand.length}张)`).join('，');
     try {
-      return await generateAIResponse(
+      const raw = await generateAIResponse(
         `我们在玩骗子酒馆，局势：${summary}。
-你是 ${data.name}，性格：${data.personality}。
-请说一句简短吐槽或评价（不超过15字），关于当前局势，必须符合角色性格。`
+
+${persona}
+
+说一句吐槽或评价当前局势的话。`,
+        LIARS_BAR_SYSTEM
       );
+      return stripAction(raw) || null;
     } catch { return null; }
   };
 
   const handleAIProactiveChat = async () => {
     const speakers = players.filter(p => !p.isUser && p.lives > 0);
-    if (speakers.length === 0 || Math.random() > 0.25) return;
+    if (speakers.length === 0 || Math.random() > 0.3) return;
     const speaker: Player = randomItem(speakers);
     const data = getCharData(speaker.id);
+    const persona = buildCharPersonaPrompt(data);
     try {
       const summary = players.map(p => `${p.name}(${p.lives}命/${p.hand.length}张)`).join('，');
-      const text = await generateAIResponse(
+      const raw = await generateAIResponse(
         `我们在玩骗子酒馆游戏，当前局势：${summary}，第 ${roundCount} 轮。
-你是 ${data.name}，性格：${data.personality}。
-请说一句简短的台词（不超过18字），关于当前局势的评论或闲聊，不要动作描写，要贴合角色性格。`
+
+${persona}
+
+说一句关于局势的评论或闲聊，像打牌时随口说的话。`,
+        LIARS_BAR_SYSTEM
       );
+      const text = stripAction(raw);
       if (text) addChat(speaker.id, data.name, `${data.name}: ${text}`);
       if (text) saveInteractionMemory(speaker.id, `和${data.name}一起玩骗子酒馆时闲聊`);
       if (text) useAppStore.getState().addEmotionEvent({ characterId: speaker.id, paDelta: 0.05, naDelta: 0.02, word: '戏谑', valence: 0.1, arousal: 0.3, matchSource: 'free_form', source: 'manual' });
@@ -536,6 +643,7 @@ export default function LiarsBarApp() {
     if (responders.length > 0) {
       const responses = await Promise.all(responders.map(async player => {
         const data = getCharData(player.id);
+        const persona = buildCharPersonaPrompt(data);
         try {
           const context = lastPlay
             ? `当前 ${players.find(p => p.id === lastPlay.playerId)?.name} 出了牌`
@@ -543,10 +651,14 @@ export default function LiarsBarApp() {
           const reply = await generateAIResponse(
             `我们在玩骗子酒馆游戏。${context}。第 ${roundCount} 轮。
 我刚才说：“${msg}”。
-你是 ${data.name}，性格：${data.personality}，关系：${data.relationship}。
-请用一句简短的微信消息回复我（不超过20字），要贴合角色性格，不要括号动作描写。`
+
+${persona}
+
+像微信聊天一样回我一句。`,
+            LIARS_BAR_SYSTEM
           );
-          return reply ? { playerId: player.id, name: data.name, text: `${data.name}: ${reply}` } : null;
+          const cleaned = reply ? stripAction(reply) : '';
+          return cleaned ? { playerId: player.id, name: data.name, text: `${data.name}: ${cleaned}` } : null;
         } catch { return null; }
       }));
       responses.filter(Boolean).forEach(r => {
@@ -572,19 +684,49 @@ export default function LiarsBarApp() {
 
     const runAITurn = async () => {
       setIsAiThinking(true);
-      await sleep(600);
+      await sleep(1200);
       await handleAIPlayTurn(currentPlayer, players, currentSuit);
     };
     runAITurn();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gamePhase, currentPlayerIdx, lastPlay, isAiThinking]);
 
-  // Proactive AI chat timer
+  // Generate game-over impressions
+  useEffect(() => {
+    if (gamePhase !== 'gameover' || impressions.length > 0) return;
+    const aiPlayers = players.filter(p => !p.isUser);
+    const generate = async () => {
+      const results = await Promise.all(aiPlayers.map(async p => {
+        const data = getCharData(p.id);
+        const persona = buildCharPersonaPrompt(data);
+        const wn = players.find(pp => pp.lives > 0)?.name || '无人';
+        try {
+          const text = await generateAIResponse(
+            `你刚刚结束了一局骗子酒馆游戏。最终 ${wn} 获胜。你的最终状态是 ${p.lives}/${p.maxLives} 条命，剩余 ${p.hand.length} 张牌。
+
+${persona}
+
+说一句话评价这场游戏，像打完牌随口说的感言。`,
+            LIARS_BAR_SYSTEM
+          );
+          const cleaned = stripAction(text || '');
+          saveInteractionMemory(p.id, `和${data.name}一起玩骗子酒馆游戏结束`);
+          useAppStore.getState().addEmotionEvent({ characterId: p.id, paDelta: p.lives > 0 ? 0.2 : -0.1, naDelta: p.lives > 0 ? -0.05 : 0.15, word: p.lives > 0 ? '得意' : '不甘', valence: p.lives > 0 ? 0.4 : -0.2, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
+          return `${data.name}: ${cleaned || '有意思的一局。'}`;
+        } catch { saveInteractionMemory(p.id, `和${data.name}一起玩骗子酒馆游戏结束`); useAppStore.getState().addEmotionEvent({ characterId: p.id, paDelta: 0, naDelta: 0.05, word: '平静', valence: 0.1, arousal: 0.15, matchSource: 'free_form', source: 'manual' }); return `${data.name}: 有意思的一局。`; }
+      }));
+      setImpressions(results);
+    };
+    generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gamePhase]);
+
+  // Proactive AI chat timer - 每4-10秒角色可能主动说句话
   useEffect(() => {
     if (gamePhase !== 'playing') return;
     const timer = setInterval(() => {
       if (!isAiThinking) handleAIProactiveChat();
-    }, 8000 + Math.random() * 7000);
+    }, 4000 + Math.random() * 6000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gamePhase, players, roundCount]);
@@ -612,6 +754,7 @@ export default function LiarsBarApp() {
     setChatInput('');
     setSpectating(false);
     setGameMemory({ roundLog: [], loserInfo: [], winnerId: null });
+    setImpressions([]);
     setChatLog([{ id: `${Date.now()}`, playerId: 'system', name: '', text: '酒局开始！每人5张牌，3条命。每轮随机花色，依次出牌，可以吹牛！', isSystem: true }]);
     setGamePhase('playing');
     setRoundCount(0);
@@ -743,44 +886,16 @@ export default function LiarsBarApp() {
             </div>
           )}
 
-          {(() => {
-            const aiPlayers = players.filter(p => !p.isUser);
-            const [impressions, setImpressions] = useState<string[]>([]);
-            useEffect(() => {
-              if (impressions.length > 0) return;
-              const generate = async () => {
-                const results = await Promise.all(aiPlayers.map(async p => {
-                  const data = getCharData(p.id);
-                  const wn = players.find(pp => pp.lives > 0)?.name || '无人';
-                  try {
-                    const text = await generateAIResponse(
-                      `你刚刚结束了一局骗子酒馆游戏。最终 ${wn} 获胜。你的最终状态是 ${p.lives}/${p.maxLives} 条命，剩余 ${p.hand.length} 张牌。
-你是 ${data.name}，性格：${data.personality}。
-请用一句简短的感言（不超过20字）评价这场游戏，贴合你的性格。`
-                    );
-                    saveInteractionMemory(p.id, `和${data.name}一起玩骗子酒馆游戏结束`);
-                    useAppStore.getState().addEmotionEvent({ characterId: p.id, paDelta: p.lives > 0 ? 0.2 : -0.1, naDelta: p.lives > 0 ? -0.05 : 0.15, word: p.lives > 0 ? '得意' : '不甘', valence: p.lives > 0 ? 0.4 : -0.2, arousal: 0.4, matchSource: 'free_form', source: 'manual' });
-                    return `${data.name}: ${text || '有意思的一局。'}`;
-                  } catch { saveInteractionMemory(p.id, `和${data.name}一起玩骗子酒馆游戏结束`); useAppStore.getState().addEmotionEvent({ characterId: p.id, paDelta: 0, naDelta: 0.05, word: '平静', valence: 0.1, arousal: 0.15, matchSource: 'free_form', source: 'manual' }); return `${data.name}: 有意思的一局。`; }
-                }));
-                setImpressions(results);
-              };
-              generate();
-            }, []);
-            if (impressions.length > 0) {
-              return (
-                <div className="rounded-xl border border-blue-800/40 bg-black/40 p-4">
-                  <h3 className="text-blue-400 font-bold mb-3">角色感言</h3>
-                  <div className="space-y-2 text-sm">
-                    {impressions.map((txt, i) => (
-                      <div key={i} className="text-blue-100">{txt}</div>
-                    ))}
-                  </div>
-                </div>
-              );
-            }
-            return null;
-          })()}
+          {impressions.length > 0 && (
+            <div className="rounded-xl border border-blue-800/40 bg-black/40 p-4">
+              <h3 className="text-blue-400 font-bold mb-3">角色感言</h3>
+              <div className="space-y-2 text-sm">
+                {impressions.map((txt, i) => (
+                  <div key={i} className="text-blue-100">{txt}</div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <button onClick={() => setGamePhase('setup')} className="w-full py-3 bg-blue-700 rounded-lg text-white font-bold">
             再来一局

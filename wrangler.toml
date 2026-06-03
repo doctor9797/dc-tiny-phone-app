@@ -1,0 +1,9 @@
+name = "lavender-phone"
+compatibility_date = "2025-04-01"
+main = "worker/api-worker.js"
+
+account_id = "7ae48e81c11733dcae5557a1e0235750"
+
+compatibility_flags = ["nodejs_compat"]
+
+assets = { directory = "dist", binding = "ASSETS" }

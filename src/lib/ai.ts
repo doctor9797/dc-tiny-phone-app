@@ -25,6 +25,43 @@ const cleanAiText = (text: string) =>
     .replace(/^[*]{1,2}[^*]*[*]{1,2}\s*/gm, '')      // strip *action* prefix per line
     .trim();
 
+/**
+ * Derive a natural speaking style description from a character's biography, personality, and interaction mode.
+ * This replaces vague formatting rules with concrete voice guidance so the LLM speaks IC.
+ */
+function deriveSpeakingStyle(biography: string, personality: string, interactionMode: string, name: string): string {
+  // Use biography clues + interactionMode to infer voice
+  const bio = (biography || '').toLowerCase();
+  const pers = (personality || '').toLowerCase();
+  const mode = (interactionMode || '').toLowerCase();
+
+  const clues: string[] = [];
+
+  if (/蝙蝠|batman|vigilante|dark|shadow|night|深沉|多疑/.test(pers)) clues.push('话不多，简洁直接');
+  if (/阳光|开朗|乐观|活泼|energetic|cheerful/.test(pers)) clues.push('语气轻松活泼，话比较多');
+  if (/暴躁|叛逆|冲动|brash|hot-headed/.test(pers)) clues.push('语言直接带刺，不耐烦时会怼人');
+  if (/沉默|安静|quiet|silent|话少/.test(pers) || /话少|寡言/.test(mode)) clues.push('话非常少，能用三个字不用一句话');
+  if (/傲慢|骄傲|arrogant|proud/.test(pers) || /傲慢/.test(mode)) clues.push('语气高高在上，好胜不服输');
+  if (/睿智|忠诚|幽默|witty|loyal/.test(pers) && /管家/.test(bio)) clues.push('用语得体略带英式幽默，偶尔吐槽');
+  if (/秘书|管家|恭敬|严肃|formal/.test(mode)) clues.push('措辞礼貌恭敬，不失温度');
+  if (/理智|聪明|谨慎|analytical|genius|intellectual/.test(pers) && !/深沉/.test(pers)) clues.push('说话有条理，偶尔会详细解释');
+  if (/知性|智慧|技术|techno|hacker|intelligence/.test(pers)) clues.push('自信有条理，偶尔会用到专业词汇');
+  if (/坚韧|果敢|不羁|military|soldier|tough/.test(pers)) clues.push('说话干脆利落，不拖泥带水');
+  if (/开朗|活泼|bubbly|cheerful/.test(pers) && /反派|cluemaster/.test(bio)) clues.push('调皮的语气，但偶尔会透出一点不安');
+  if (/开明|友好|friendly|warm/.test(mode)) clues.push('语气温和友好，让人舒服');
+  if (/神经质|疯狂|疯狂|mad|insane/.test(pers)) clues.push('语出惊人，跳跃性强');
+  if (/幼|孩子|child|young/.test(bio) || /少年|少女/.test(name)) clues.push('语气有少年感，可能带点稚气');
+  if (/成熟|年长|年长|old|elder|senior/.test(bio)) clues.push('语气沉稳老练');
+
+  if (clues.length === 0) {
+    // Fallback: infer from interactionMode
+    if (mode) return mode + '的语气';
+    return '';
+  }
+
+  return clues.join('，');
+}
+
 const normalizeForceRuleText = (value?: string) =>
   (value || '')
     .split('\n')
@@ -234,19 +271,24 @@ export async function getCharacterReply(
   const cardAffection = card?.affection ?? character.affection ?? 50;
   const cardNickname = card?.userNickname || character.userNickname || '你';
   const cardInteractionMode = card?.interactionMode || character.interactionMode || '';
+
+  // Derive speaking style from biography + interactionMode
+  const speakingStyle = deriveSpeakingStyle(biography, personality, cardInteractionMode, characterName);
+
   const sysParts: string[] = [
-    '角色：' + characterName + '。',
+    '你是' + characterName + '，以下是你的一切。',
   ];
   if (worldContext) sysParts.push('世界观：' + worldContext);
   if (personality) sysParts.push('性格：' + personality + '。');
+  if (biography) sysParts.push('背景：' + biography);
   if (experience) sysParts.push('经历：' + experience + '。');
-  if (biography) sysParts.push('档案：' + biography + '。');
   sysParts.push('关系：' + relationship + '（你=' + cardNickname + '，好感' + cardAffection + '/100）。');
   if (viewOnMe) sysParts.push('对你的看法：' + viewOnMe);
-  if (cardInteractionMode) sysParts.push('相处模式：' + cardInteractionMode + '——你必须严格按此相处模式对待我。');
-  if (characterMemories) sysParts.push('记忆：\n' + characterMemories + '\n（不记得说不知道）');
+  if (cardInteractionMode) sysParts.push('和你聊天时的态度：' + cardInteractionMode);
+  if (speakingStyle) sysParts.push('说话风格：' + speakingStyle);
+  if (characterMemories) sysParts.push('记忆：\n' + characterMemories + '\n（不记得就说不知道）');
   if (newsContext) sysParts.push(newsContext);
-  sysParts.push('风格：纯文字微信聊天，严禁动作/神态/心理描写。消息前无角色名/冒号/括号/星号，直接以文字开头。2-4条用\\n\\n分隔。严禁第四面墙——你就是角色本人，不是AI，不提扮演/模型/设定。');
+  sysParts.push('格式：纯文字微信聊天。不要动作描写、不要括号、不要星号、不要冒号。直接以文字开头。不要加角色名前缀。多条消息用\\n\\n分隔。');
   if (settings.bilingual) sysParts.push('双语：先中后英。');
   sysParts.push(moodPrompt);
   // Force requirements at the very end for maximum impact

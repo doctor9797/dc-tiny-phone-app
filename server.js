@@ -1,12 +1,20 @@
-// 纯 API 服务 — 提供网易云音乐代理 + Gemini AI 代理
-// 静态文件由又拍云 CDN 托管，与该服务器无关
+// Zeabur 部署 — 提供静态文件 + 网易云音乐代理 + Gemini AI 代理
+// 开发环境下，Vite middleware 注入 server.js，API 路由由 Express 处理
+// 生产环境下（Zeabur），Express 同时托管 dist/ 静态文件
 
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import CryptoJS from 'crypto-js';
 import forge from 'node-forge';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
+
+// ── 静态文件（Zeabur 生产环境）──
+const distPath = path.resolve(__dirname, 'dist');
+app.use(express.static(distPath));
 
 // ── NetEase Weapi 加密 ──
 
@@ -277,6 +285,12 @@ app.post('/api/chat', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── SPA fallback（前端路由刷新不 404）──
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Not found' });
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // ── 启动 ──
